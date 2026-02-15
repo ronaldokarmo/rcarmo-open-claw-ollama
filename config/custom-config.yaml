@@ -1,0 +1,23 @@
+# OpenClaw Custom Configuration
+# Suporta: OpenRouter, Gemini, Ollama (Local)
+
+# Modelos disponíveis
+agents:
+  defaults:
+    # Modelo padrão: OpenRouter (mais flexível e com melhor custo)
+    model: "openrouter/auto"
+    models:
+      - "openrouter/auto"
+      - "openrouter/anthropic/claude-opus-4"
+      - "openrouter/google/gemini-2.0-flash-001"
+      - "anthropic/claude-opus-4-5"
+      - "google/gemini-2.0-flash"
+      - "ollama/llama2"
+      - "ollama/mistral"
+
+# OpenClaw Custom Configuration
+# Suporta: OpenRouter, Gemini, Ollama (Local)
+
+# Logging configuration
+logging:
+  level: "INFO"
