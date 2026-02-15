@@ -1,74 +1,139 @@
 # OpenClaw Docker Project
 
-Este projeto configura um ambiente OpenClaw usando Docker, incluindo integrações com diversos modelos de IA.
+Este projeto fornece um ambiente containerizado robusto para executar o OpenClaw, uma plataforma de agentes de IA. Ele utiliza Docker e Docker Compose para orquestrar a aplicação principal e um proxy reverso Nginx, facilitando a configuração, o deployment e a gestão de logs e dados persistentes.
+
+## Funcionalidades
+
+- **Orquestração via Docker Compose**: Gerenciamento simplificado de containers.
+- **Proxy Reverso Nginx**: Acesso facilitado e configuração de SSL (se necessário).
+- **Scripts de Automação**: Scripts para setup inicial (`setup.sh`), restauração (`restore_openclaw.sh`) e monitoramento (`monitor.sh`).
+- **Persistência de Dados**: Volumes configurados para persistir configurações, chaves e memória dos agentes.
+- **Configuração Flexível**: Uso de arquivo `.env` para gerenciamento de chaves de API e configurações do ambiente.
 
 ## Pré-requisitos
 
-- Docker
-- Docker Compose
+Antes de começar, certifique-se de ter instalado em sua máquina:
 
-## Instalação e Execução
+- [Docker Desktop](https://www.docker.com/products/docker-desktop) (com integração WSL 2 se estiver no Windows)
+- [Docker Compose](https://docs.docker.com/compose/install/) (geralmente incluído no Docker Desktop)
+- Um terminal Bash (Git Bash, WSL, ou terminal nativo Linux/Mac)
 
-### Construir e Iniciar
+## Instalação e Configuração
 
-Para construir e iniciar os containers em segundo plano:
+Você pode configurar o projeto utilizando os scripts de automação ou manualmente.
+
+### Método 1: Instalação Automática (Recomendado)
+
+O script `setup.sh` verifica as dependências, cria o arquivo `.env` (se não existir), solicita sua chave de API do Gemini e inicia os serviços.
 
 ```bash
-docker-compose up -d --build
+./setup.sh
 ```
 
-Para acompanhar os logs:
+### Método 2: Instalação Manual
+
+1.  **Clone o repositório (se ainda não o fez):**
+    (Se estiver usando este projeto localmente, pule para o próximo passo).
+
+2.  **Configuração do Ambiente:**
+    Copie o arquivo de exemplo `.env.example` para `.env`:
+    ```bash
+    cp .env.example .env
+    ```
+
+3.  **Edite o arquivo `.env`:**
+    Abra o arquivo `.env` e adicione suas chaves de API e configurações desejadas.
+    ```properties
+    GEMINI_API_KEY=sua_chave_aqui
+    OPENROUTER_API_KEY=sua_chave_aqui
+    # ... outras chaves
+    OPENCLAW_MODEL=openrouter/auto
+    LOG_LEVEL=INFO
+    ```
+
+4.  **Construir e Iniciar:**
+    ```bash
+    docker-compose build
+    docker-compose up -d
+    ```
+
+### Método 3: Restauração / Bootstrap
+
+Se você estiver restaurando um ambiente ou precisando de uma configuração mais avançada (incluindo verificação de volumes no host), use o script de restauração:
 
 ```bash
+./restore_openclaw.sh
+```
+
+## Estrutura do Projeto
+
+- **`config/`**: Arquivos de configuração do OpenClaw (ex: `custom-config.yaml`).
+- **`data/`**: Dados persistentes do OpenClaw (memória, sessões). Mapeado para `/home/openclaw/.config/openclaw`.
+- **`logs/`**: Logs da aplicação e de restauração.
+- **`nginx/`**: Configurações (`conf.d`) e certificados (`ssl`) para o proxy reverso.
+- **`scripts`**:
+    - `setup.sh`: Script de inicialização rápida.
+    - `restore_openclaw.sh`: Script robusto de verificação e restauração.
+    - `monitor.sh`: Script para visualizar status e logs rapidamente.
+    - `entrypoint.sh`: Script executado dentro do container ao iniciar.
+
+## Uso
+
+### Acessar o Dashboard
+
+Após iniciar os containers, o OpenClaw estará acessível em:
+
+- **Via Nginx (Proxy):** `http://localhost` (Porta 80)
+- **Direto no Container:** `http://localhost:18790` (ou a porta definida em `OPENCLAW_PORT` no `.env`)
+
+### Monitoramento e Logs
+
+Para verificar o status dos containers e ver os logs em tempo real:
+
+**Usando o script de monitoramento:**
+```bash
+./monitor.sh
+```
+
+**Usando comandos Docker:**
+```bash
+# Ver logs em tempo real
 docker-compose logs -f
+
+# Ver logs apenas do serviço openclaw
+docker-compose logs -f openclaw
 ```
 
-### Parar
+### Parar a Aplicação
 
-Para parar e remover os containers:
+Para parar e remover os containers (mantendo os dados dos volumes):
 
 ```bash
 docker-compose down
 ```
 
-## Acesso
-
-O painel do OpenClaw estará acessível via web. Verifique os logs para obter o token de acesso inicial ou execute:
-
-```bash
-docker exec -it openclaw openclaw doctor --generate-gateway-token
-```
-
-## Comandos Úteis
-
-### Reconstruir do Zero
-
+Para parar e remover volumes (CUIDADO: isso apaga dados persistentes não salvos no host):
 ```bash
 docker-compose down -v
-docker-compose build --no-cache
-docker-compose up -d
 ```
 
-### Acessar o Container
+## Acesso ao Container (Shell)
+
+Para executar comandos diretamente dentro do container do OpenClaw:
 
 ```bash
 docker exec -it openclaw bash
 ```
-
-## Configuração de Modelos
-
-Para configurar modelos (ex: Gemini, OpenRouter), utilize a CLI do OpenClaw dentro do container ou a interface web.
-
-Exemplo para Gemini:
-
+Ou para gerar um token de gateway, por exemplo:
 ```bash
-openclaw config add-model '{
-  "name": "Gemini Flash",
-  "provider": "google",
-  "model": "gemini-2.5-flash",
-  "api_key": "SUA_CHAVE_AQUI"
-}'
+docker exec -it openclaw openclaw doctor --generate-gateway-token
 ```
 
+## Solução de Problemas
+
+-   **Porta em uso:** Se encontrar erros de "port already allocated", verifique se não há outros serviços rodando nas portas 80 ou 18790. Você pode alterar as portas no `docker-compose.yml` ou `.env`.
+-   **Permissões:** Se tiver problemas de permissão nos volumes (especialmente em Linux), certifique-se de que o usuário do host tem permissão de escrita nas pastas `data` e `logs`. O container roda com usuário 1000:1000.
+-   **Variáveis de Ambiente:** Se as chaves de API não estiverem funcionando, verifique se elas foram salvas corretamente no arquivo `.env` e se o container foi recriado (`docker-compose up -d --force-recreate`) após as alterações.
+
 ---
-*Para mais detalhes, consulte a documentação oficial do OpenClaw.*
+*Projeto configurado para ambiente de desenvolvimento e produção local.*
