@@ -24,14 +24,13 @@ RUN apt-get update && apt-get install -y \
     && apt-get clean \
     && rm -rf /var/lib/apt/lists/*
 
-# Antes de mudar para o usuário openclaw
-RUN npm install -g @openclaw/brave-search    
-
 # Instala Node.js (se necessário para plugins)
 RUN curl -fsSL https://deb.nodesource.com/setup_20.x | bash - \
     && apt-get install -y nodejs \
     && apt-get clean \
     && rm -rf /var/lib/apt/lists/*
+
+
 
 # Cria um usuário não-root para segurança
 RUN useradd -m -u 1000 -s /bin/bash openclaw \

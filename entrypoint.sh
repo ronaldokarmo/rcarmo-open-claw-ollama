@@ -13,7 +13,7 @@ echo ""
 
 # (Opcional) Habilitar Google Antigravity
 # Descomente se quiser autoconfigura na primeira inicialização
-# openclaw plugins enable google-antigravity-auth || true
+openclaw plugins enable google-antigravity-auth || true
 
 # Tentar iniciar o gateway - se falhar, aguardar e tentar novamente
 while true; do

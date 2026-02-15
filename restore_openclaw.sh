@@ -32,15 +32,13 @@ NGINX_SSL_SOURCE_DIR="${PROJECT_DIR}/nginx/ssl" # Diretório fonte dos SSLs no h
 RESTORE_LOG_DIR="${PROJECT_DIR}/logs" # Para logs de restauração
 OPENCLAW_DATA_DIR="${PROJECT_DIR}/data"
 OPENCLAW_LOGS_DIR="${PROJECT_DIR}/logs"
-OLLAMA_DATA_DIR="${PROJECT_DIR}/ollama_data"
-OPENWEBUI_DATA_DIR="${PROJECT_DIR}/open_webui_data"
+
 
 # Names do Docker Compose e Makefile
 IMAGE_NAME="openclaw"
 CONTAINER_NAME="openclaw"
 NGINX_PROXY_CONTAINER_NAME="openclaw-proxy"
-OLLAMA_CONTAINER_NAME="ollama"
-OPENWEBUI_CONTAINER_NAME="open-webui"
+
 # --- FIM CONFIGURAÇÕES DO USUÁRIO ---
 
 # ------ INICIALIZAÇÃO DE VARIÁVEIS DE LOGGING E CAMINHOS ------
@@ -93,12 +91,6 @@ prompt_user_for_secrets() {
   read -p "[INPUT NECESSÁRIO] OPENROUTER_API_KEY (deixe em branco para manter): " USER_INPUT
   if [ -n "$USER_INPUT" ]; then sed -i "s/^OPENROUTER_API_KEY=.*/OPENROUTER_API_KEY=${USER_INPUT}/" "$ENV_PATH"; fi
 
-  read -p "[INPUT NECESSÁRIO] ANTHROPIC_API_KEY (deixe em branco para manter): " USER_INPUT
-  if [ -n "$USER_INPUT" ]; then sed -i "s/^ANTHROPIC_API_KEY=.*/ANTHROPIC_API_KEY=${USER_INPUT}/" "$ENV_PATH"; fi
-
-  read -p "[INPUT NECESSÁRIO] OPENAI_API_KEY (deixe em branco para manter): " USER_INPUT
-  if [ -n "$USER_INPUT" ]; then sed -i "s/^OPENAI_API_KEY=.*/OPENAI_API_KEY=${USER_INPUT}/" "$ENV_PATH"; fi
-
   read -p "[INPUT NECESSÁRIO] BRAVE_API_KEY (deixe em branco para manter): " USER_INPUT
   if [ -n "$USER_INPUT" ]; then sed -i "s/^BRAVE_API_KEY=.*/BRAVE_API_KEY=${USER_INPUT}/" "$ENV_PATH"; fi
 
@@ -138,8 +130,7 @@ log_message "Verificando a existência dos arquivos e diretórios essenciais..."
 log_message "Garantindo que os diretórios de volume no host existam..."
 mkdir -p "$OPENCLAW_DATA_DIR" && check_command_status
 mkdir -p "$OPENCLAW_LOGS_DIR" && check_command_status
-mkdir -p "$OLLAMA_DATA_DIR" && check_command_status
-mkdir -p "$OPENWEBUI_DATA_DIR" && check_command_status
+
 # Diretórios de Nginx são mapeados diretamente via docker-compose.yml, não precisa criar no host se o docker-compose gerencia.
 # Apenas avisamos se a origem não for encontrada no host.
 [ -d "$NGINX_CONF_SOURCE_DIR" ] || log_message "AVISO: Diretório de configuração Nginx fonte '$NGINX_CONF_SOURCE_DIR' não encontrado no host. Verifique o mapeamento no docker-compose.yml."
@@ -154,7 +145,7 @@ log_message "Verificando a existência da imagem Docker '$IMAGE_NAME'..."
 if ! docker image inspect "$IMAGE_NAME" > /dev/null 2>&1; then
   log_message "Imagem '$IMAGE_NAME' não encontrada. Construindo a imagem Docker a partir de '$DOCKERFILE_PATH'..."
   cd "$PROJECT_DIR"
-  docker build -t "$IMAGE_NAME" --env-file "$ENV_PATH" .
+  docker build -t "$IMAGE_NAME" .
   check_command_status
   log_message "Imagem '$IMAGE_NAME' construída com sucesso."
 else
@@ -173,8 +164,7 @@ log_message "Serviços levantados com docker-compose."
 log_message "Verificando o status dos containers..."
 docker ps --filter "name=${CONTAINER_NAME}" --format "table {{.Names}}\t{{.Image}}\t{{.Status}}\t{{.Ports}}" --no-trunc | tee -a "$RESTORE_LOG_FILE"
 docker ps --filter "name=${NGINX_PROXY_CONTAINER_NAME}" --format "table {{.Names}}\t{{.Image}}\t{{.Status}}\t{{.Ports}}" --no-trunc | tee -a "$RESTORE_LOG_FILE"
-docker ps --filter "name=${OLLAMA_CONTAINER_NAME}" --format "table {{.Names}}\t{{.Image}}\t{{.Status}}\t{{.Ports}}" --no-trunc | tee -a "$RESTORE_LOG_FILE"
-docker ps --filter "name=${OPENWEBUI_CONTAINER_NAME}" --format "table {{.Names}}\t{{.Image}}\t{{.Status}}\t{{.Ports}}" --no-trunc | tee -a "$RESTORE_LOG_FILE"
+
 check_command_status
 
 # 5. Testar a conexão do OpenClaw (usando lógica do Makefile para pegar a porta)
@@ -188,12 +178,21 @@ if [ -z "$HOST_PORT" ]; then
   fi
 fi
 
-if curl -s "http://localhost:${HOST_PORT}/health" > /dev/null; then
-  log_message "✅ Saúde do OpenClaw OK em http://localhost:${HOST_PORT}/health"
-else
-  log_message "❌ Falha no teste de saúde do OpenClaw. Verifique os logs do container '$CONTAINER_NAME':"
-  docker logs "$CONTAINER_NAME" 2>&1 | tee -a "$RESTORE_LOG_FILE"
-fi
+# Loop para verificar a saúde do serviço
+for i in {1..5}; do
+  if curl -s "http://localhost:${HOST_PORT}/health" > /dev/null; then
+    log_message "✅ Saúde do OpenClaw OK em http://localhost:${HOST_PORT}/health"
+    break
+  else
+    if [ "$i" -eq 5 ]; then
+      log_message "❌ Falha no teste de saúde do OpenClaw após 5 tentativas. Verifique os logs do container '$CONTAINER_NAME':"
+      docker logs "$CONTAINER_NAME" 2>&1 | tee -a "$RESTORE_LOG_FILE"
+    else
+      log_message "Tentativa $i/5 falhou. Aguardando 5 segundos..."
+      sleep 5
+    fi
+  fi
+done
 
 # 6. Ativar plugin Google Antigravity (se o usuário optar)
 log_message "Verificando ativação do plugin 'google-antigravity-auth'..."
@@ -220,11 +219,14 @@ fi
 if [ "$ENTRYPOINT_MODIFIED" = true ] && [ -f "$DOCKERFILE_PATH" ] && [ -f "$ENV_PATH" ]; then
   log_message "\nATENÇÃO: O arquivo entrypoint.sh foi modificado para ativar o plugin."
   log_message "Para que esta mudança tenha efeito, você precisará:"
-  log_message "1. Reconstruir a imagem Docker: Execute 'cd ${PROJECT_DIR} && docker build -t ${IMAGE_NAME} --env-file ${ENV_PATH} .'"
+  log_message "1. Reconstruir a imagem Docker: Execute 'cd ${PROJECT_DIR} && docker build -t ${IMAGE_NAME} .'"
   log_message "2. Reiniciar os containers: Execute 'cd ${PROJECT_DIR} && docker-compose --env-file ${ENV_PATH} down && docker-compose --env-file ${ENV_PATH} up -d'"
 fi
 
 # 7. Mensagem final e instruções de próximos passos
+OPENCLAW_MODEL=$(grep "^OPENCLAW_MODEL=" "$ENV_PATH" | cut -d'=' -f2 || echo "openrouter/auto")
+if [ -z "${OPENCLAW_MODEL:-}" ]; then OPENCLAW_MODEL="openrouter/auto"; fi
+
 log_message "\n--- Restauração/Bootstrap do Projeto OpenClaw Docker Concluída ---"
 log_message "O ambiente foi configurado com os arquivos fornecidos e os serviços foram iniciados."
 log_message "\nRECOMENDAÇÕES IMPORTANTES:"
@@ -233,6 +235,6 @@ log_message "2. Monitoramento: Use 'make logs' ou 'docker logs ${CONTAINER_NAME}
 log_message "3. Depuração: Acesse o container com 'make exec' ou 'docker exec -it ${CONTAINER_NAME} bash'."
 log_message "4. Restauração de Dados Persistentes: Para restaurar seu histórico e configurações (MEMORY.md, etc.), copie o conteúdo do seu backup para '${OPENCLAW_DATA_DIR}' e '${OPENCLAW_LOGS_DIR}'. Em seguida, reinicie os containers (ex: 'make stop && make start' ou 'docker-compose down && docker-compose up -d' na pasta do projeto)."
 log_message "5. Segurança do .env: NUNCA commite o arquivo '.env' gerado para o Git. Certifique-se de que ele esteja adicionado ao seu arquivo .gitignore."
-log_message "6. Mapeamento de Volume E:\\: Tenha cautela com o mapeamento total do drive E:\\ (`E:\\:/mnt/e-drive`) para o container. Para maior segurança, considere mapear apenas diretórios específicos se possível (ex: `E:/openclaw-docker/data:/home/openclaw/.config/openclaw`)."
+log_message "6. Mapeamento de Volume E:\\: Tenha cautela com o mapeamento total do drive E:\\ ('E:\\:/mnt/e-drive') para o container. Para maior segurança, considere mapear apenas diretórios específicos se possível (ex: 'E:/openclaw-docker/data:/home/openclaw/.config/openclaw')."
 log_message "7. Autonomia e Modelos: O modelo padrão '${OPENCLAW_MODEL}' está configurado no .env. Seu custom-config.yaml também aponta 'openrouter/auto' como modelo padrão para agentes. Verifique se as chaves de API necessárias (OpenRouter, Gemini, etc.) estão corretas no .env."
 log_message "\nLogs completos da restauração podem ser encontrados em:\n$RESTORE_LOG_FILE"

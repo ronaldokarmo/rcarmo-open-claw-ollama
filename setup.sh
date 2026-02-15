@@ -3,12 +3,11 @@ set -e
 
 echo "🔧 Configuração Automática do OpenClaw com Docker"
 
-# Verifica se Docker está instalado
-if ! command -v docker &> /dev/null; then
-    echo "❌ Docker não encontrado. Instalando..."
-    curl -fsSL https://get.docker.com | sh
-    sudo usermod -aG docker $USER
-    echo "✅ Docker instalado. Reinicie o terminal."
+# Verifica se Docker está instalado e rodando
+if ! docker info > /dev/null 2>&1; then
+    echo "❌ Erro ao conectar com o Docker Daemon."
+    echo "   Certifique-se de que o Docker Desktop está rodando."
+    echo "   Se estiver no WSL, verifique se a integração com sua distro está ativada nas configurações do Docker Desktop -> Resources -> WSL Integration."
     exit 1
 fi
 
@@ -27,9 +26,29 @@ if [ ! -f "Dockerfile" ]; then
     cd openclaw-docker
 fi
 
-# Solicita chave do Gemini
-read -p "🔑 Digite sua chave de API do Gemini: " GEMINI_API_KEY
-echo "GEMINI_API_KEY=$GEMINI_API_KEY" > .env
+# Configuração do .env
+if [ ! -f ".env" ]; then
+    echo "📄 Criando arquivo .env a partir de .env.example..."
+    cp .env.example .env
+fi
+
+# Carrega variáveis existentes para não pedir de novo se já estiverem lá
+source .env 2>/dev/null || true
+
+# Solicita chave do Gemini se não estiver configurada
+if [ -z "$GEMINI_API_KEY" ] || [ "$GEMINI_API_KEY" = "sua-chave-aqui" ]; then
+    read -p "🔑 Digite sua chave de API do Gemini: " INPUT_GEMINI_KEY
+    if [ -n "$INPUT_GEMINI_KEY" ]; then
+        # Atualiza a chave no .env (cross-platform sed)
+        if grep -q "GEMINI_API_KEY=" .env; then
+             sed -i "s|^GEMINI_API_KEY=.*|GEMINI_API_KEY=$INPUT_GEMINI_KEY|" .env
+        else
+             echo "GEMINI_API_KEY=$INPUT_GEMINI_KEY" >> .env
+        fi
+    fi
+else
+    echo "✅ Chave Gemini já configurada."
+fi
 
 # Constrói a imagem
 echo "🐳 Construindo imagem Docker..."
