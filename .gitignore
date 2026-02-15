@@ -1,0 +1,19 @@
+# Dependencies
+node_modules/
+dist/
+
+# Environment variables
+.env
+
+# Data and Logs
+data/
+logs/
+ollama_data/
+open_webui_data/
+
+# Secrets
+instrucoes.txt
+
+# OS Files
+Thumbs.db
+.DS_Store
