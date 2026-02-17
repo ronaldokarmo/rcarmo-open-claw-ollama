@@ -1,49 +1,57 @@
 services:
-  # OpenClaw - Main Application
-  openclaw:
-    build: .
-    container_name: openclaw
-    user: "1000:1000"
-    restart: unless-stopped
-    # Compartilha rede com Nginx para resolver localhost
-    network_mode: "service:nginx"
-    environment:
-      # API Keys para os diferentes providers
-      - GEMINI_API_KEY=${GEMINI_API_KEY}
-      - OPENROUTER_API_KEY=${OPENROUTER_API_KEY}
-      - ANTHROPIC_API_KEY=${ANTHROPIC_API_KEY}
-      - OPENAI_API_KEY=${OPENAI_API_KEY}
-      - BRAVE_API_KEY=${BRAVE_API_KEY}
-      # Configurações do OpenClaw
-      - OPENCLAW_MODEL=openrouter/auto
-      - OPENCLAW_GATEWAY_TOKEN=${OPENCLAW_GATEWAY_TOKEN}
-      - LOG_LEVEL=INFO
-      - TZ=America/Sao_Paulo
-      - OPENCLAW_HOME=/home/openclaw/.config/openclaw
-    volumes:
-      - ./data:/home/openclaw/.config/openclaw
-      - ./logs:/home/openclaw/logs
-      - ./config/custom-config.yaml:/home/openclaw/.config/openclaw/custom-config.yaml:ro
-      - /mnt/e:/mnt/e-drive # Acesso full ao diretório E:\ do host (sintaxe WSL)
-    depends_on:
-      nginx:
-        condition: service_started
+    # OpenClaw - Main Application
+    openclaw:
+        build: .
+        container_name: openclaw
+        user: "1000:1000"
+        restart: always #unless-stopped
+        # Compartilha rede com Nginx para resolver localhost
+        network_mode: "service:nginx"
+        environment:
+            # API Keys para os diferentes providers
+            - GOOGLE_AI_KEY=${GOOGLE_AI_KEY}
+            - GROQ_API_KEY=${GROQ_API_KEY}
+            - OPENROUTER_API_KEY=${OPENROUTER_API_KEY}
+            - BRAVE_API_KEY=${BRAVE_API_KEY}
+            # Configurações do OpenClaw
+            - OPENCLAW_MODEL=openrouter/auto
+            - OPENCLAW_GATEWAY_TOKEN=${OPENCLAW_GATEWAY_TOKEN}
+            - OPENCLAW_HOME=/home/openclaw/.config/openclaw
+            - OPENCLAW_PORT=${OPENCLAW_PORT}
+            - LOG_LEVEL=INFO
+            - TZ=America/Sao_Paulo
+            # Adicionamos esta linha para forçar o sistema a achar o executável
+            - PATH=/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin:/home/openclaw/.local/bin:/app/node_modules/.bin
+        entrypoint: [ "/bin/bash", "/app/entrypoint.sh" ]
+        volumes:
+            - ./data:/home/openclaw/.config/openclaw
+            - ./logs:/home/openclaw/logs
+            - ./config/custom-config.yaml:/home/openclaw/.config/openclaw/custom-config.yaml:ro
+            - /mnt/e:/mnt/e-drive # Acesso full ao diretório E:\ do host (sintaxe WSL)
+            # - ./openclaw-data:/usr/lib/node_modules/openclaw
+            # - ./node_modules:/usr/lib/node_modules/openclaw/node_modules
+            - ./entrypoint.sh:/app/entrypoint.sh
+            # - ./node_modules:/app/node_modules
+            # - ./data/.openclaw:/root/.openclaw
+        depends_on:
+            nginx:
+                condition: service_started
 
-  # Nginx - Reverse Proxy
-  nginx:
-    image: nginx:alpine
-    container_name: openclaw-proxy
-    restart: unless-stopped
-    ports:
-      - "80:80" # OpenClaw via HTTP
-      - "18790:18789" # OpenClaw direto
-      - "443:443" # HTTPS
-    volumes:
-      - ./nginx/conf.d:/etc/nginx/conf.d:ro
-      - ./nginx/ssl:/etc/nginx/ssl:ro
-    networks:
-      - openclaw-net
+    # Nginx - Reverse Proxy
+    nginx:
+        image: nginx:alpine
+        container_name: openclaw-proxy
+        restart: unless-stopped
+        ports:
+            - "80:80" # OpenClaw via HTTP
+            - "18790:18789" # OpenClaw direto
+            - "443:443" # HTTPS
+        volumes:
+            - ./nginx/conf.d:/etc/nginx/conf.d:ro
+            - ./nginx/ssl:/etc/nginx/ssl:ro
+        networks:
+            - openclaw-net
 
 networks:
-  openclaw-net:
-    driver: bridge
+    openclaw-net:
+        driver: bridge

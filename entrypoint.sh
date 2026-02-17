@@ -24,3 +24,4 @@ while true; do
   echo "[$(date)] Gateway saiu, reiniciando em 10s..."
   sleep 10
 done
+

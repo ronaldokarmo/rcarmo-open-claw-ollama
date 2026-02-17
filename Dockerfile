@@ -24,35 +24,32 @@ RUN apt-get update && apt-get install -y \
     && apt-get clean \
     && rm -rf /var/lib/apt/lists/*
 
-# Instala Node.js (se necessário para plugins)
-RUN curl -fsSL https://deb.nodesource.com/setup_20.x | bash - \
-    && apt-get install -y nodejs \
+# Instala Node.js v22 (Requisito OpenClaw)
+RUN curl -fsSL https://deb.nodesource.com/setup_22.x | bash - \
+    && apt-get install -y nodejs sudo \
     && apt-get clean \
     && rm -rf /var/lib/apt/lists/*
 
-
-
 # Cria um usuário não-root para segurança
 RUN useradd -m -u 1000 -s /bin/bash openclaw \
-    && mkdir -p /app /data /logs \
-    && chown -R openclaw:openclaw /app /data /logs
+    && mkdir -p /app /data /logs /home/openclaw/.local/bin \
+    && chown -R openclaw:openclaw /app /data /logs /home/openclaw
+
+# Instala OpenClaw GLOBALMENTE para evitar problemas de PATH
+# E permite que o script use o binário de qualquer lugar
+RUN npm install -g openclaw@latest --unsafe-perm
 
 # Diretório de trabalho
 WORKDIR /app
 
-# Copia arquivos de instalação se necessário
-# COPY install.sh /app/install.sh
-
-# Instala OpenClaw mas impede a execução do setup interativo durante o build
-RUN curl -fsSL https://openclaw.ai/install.sh -o install_openclaw.sh \
-    && chmod +x install_openclaw.sh \
-    && ./install_openclaw.sh --only-bin || true \
-    && rm install_openclaw.sh
-
-# Configura variáveis de ambiente para o usuário openclaw
-ENV PATH="/home/openclaw/.local/bin:${PATH}"
+# Configura variáveis de ambiente
+ENV PATH="/usr/bin:/usr/local/bin:/home/openclaw/.local/bin:${PATH}"
 ENV OPENCLAW_HOME=/home/openclaw/.config/openclaw
 ENV PYTHONUNBUFFERED=1
+
+# Copia script de entrada e garante que tenha quebras de linha Unix (LF)
+COPY --chown=openclaw:openclaw entrypoint.sh /app/entrypoint.sh
+RUN sed -i 's/\r$//' /app/entrypoint.sh && chmod +x /app/entrypoint.sh
 
 # Muda para usuário não-root
 USER openclaw
@@ -69,11 +66,6 @@ VOLUME ["/home/openclaw/.config/openclaw", "/data", "/logs"]
 # Health check para verificar se o serviço está saudável
 HEALTHCHECK --interval=30s --timeout=10s --start-period=5s --retries=3 \
     CMD curl -f http://localhost:18789/health || exit 1
-
-# Comando de inicialização com script de entrada
-# No Dockerfile, verifique se está assim:
-COPY --chown=openclaw:openclaw entrypoint.sh /app/entrypoint.sh
-RUN chmod +x /app/entrypoint.sh
 
 # Comando de inicialização
 ENTRYPOINT ["/bin/bash", "/app/entrypoint.sh"]
