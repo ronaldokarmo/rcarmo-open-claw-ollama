@@ -16,6 +16,7 @@ Antes de começar, certifique-se de ter instalado em sua máquina:
 
 - [Docker Desktop](https://www.docker.com/products/docker-desktop) (com integração WSL 2 se estiver no Windows)
 - [Docker Compose](https://docs.docker.com/compose/install/) (geralmente incluído no Docker Desktop)
+- [Node.js 22+](https://nodejs.org) (Necessário para o build do OpenClaw dentro do container)
 - Um terminal Bash (Git Bash, WSL, ou terminal nativo Linux/Mac)
 
 ## Instalação e Configuração
@@ -132,8 +133,9 @@ docker exec -it openclaw openclaw doctor --generate-gateway-token
 ## Solução de Problemas
 
 -   **Porta em uso:** Se encontrar erros de "port already allocated", verifique se não há outros serviços rodando nas portas 80 ou 18790. Você pode alterar as portas no `docker-compose.yml` ou `.env`.
--   **Permissões:** Se tiver problemas de permissão nos volumes (especialmente em Linux), certifique-se de que o usuário do host tem permissão de escrita nas pastas `data` e `logs`. O container roda com usuário 1000:1000.
--   **Variáveis de Ambiente:** Se as chaves de API não estiverem funcionando, verifique se elas foram salvas corretamente no arquivo `.env` e se o container foi recriado (`docker-compose up -d --force-recreate`) após as alterações.
+-   **Permissões e Volumes:** Se o comando `openclaw` não for encontrado ou os plugins não carregarem, verifique se os volumes `./openclaw-data` ou `./node_modules` no `docker-compose.yml` não estão sobrescrevendo a instalação interna. Recentemente desativamos esses mounts por padrão para garantir estabilidade.
+-   **Quebras de Linha (CRLF vs LF):** Se o container falhar com erros de sintaxe (ex: `\r: command not found`), execute o comando `wsl dos2unix entrypoint.sh` ou `sed -i 's/\r$//' entrypoint.sh` no seu terminal Bash para corrigir as quebras de linha Windows.
+-   **Variáveis de Ambiente:** Se as chaves de API não estiverem funcionando, verifique se elas foram salvas corretamente no arquivo `.env` e se o container foi recriado (`docker build --no-cache` seguido de `docker compose up -d`) após as alterações.
 
 ---
 *Projeto configurado para ambiente de desenvolvimento e produção local.*
