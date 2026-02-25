@@ -9,6 +9,17 @@ Este projeto fornece um ambiente containerizado robusto para executar o OpenClaw
 - **Scripts de Automação**: Scripts para setup inicial (`setup.sh`), restauração (`restore_openclaw.sh`) e monitoramento (`monitor.sh`).
 - **Persistência de Dados**: Volumes configurados para persistir configurações, chaves e memória dos agentes.
 - **Configuração Flexível**: Uso de arquivo `.env` para gerenciamento de chaves de API e configurações do ambiente.
+- **Modelos Otimizados**: Suporte a modelos locais e em nuvem com aliases pré-configurados.
+
+## Modelos e Especialidades
+
+| Alias | Modelo (ID OpenRouter) | Especialidade | Pontos Fortes |
+| :--- | :--- | :--- | :--- |
+| **flash** | `google/gemini-2.0-flash-001` | Velocidade & Visão | Resposta quase instantânea. Excelente para analisar screenshots de bugs e logs extensos de automação. |
+| **sonnet** | `anthropic/claude-3.5-sonnet` | Codificação (Coding) | O "Gold Standard" para gerar scripts Playwright, Appium e lógica complexa de integração no Home Assistant. |
+| **r1** | `deepseek/deepseek-r1` | Raciocínio Lógico | Modelo de "Chain of Thought". Ideal para debugar erros de lógica complexos ou arquitetar redes IoT do zero. |
+| **chat** | `deepseek/deepseek-chat` | Custo-Benefício | Ótimo para conversas gerais e tarefas repetitivas. Extremamente barato e muito capaz (V3). |
+| **fast** | `ollama/llama3.1-fast` | Privacidade Local | Roda 100% na sua Orange Pi 5. Perfeito para processar dados sensíveis da sua casa sem sair da rede local. |
 
 ## Pré-requisitos
 

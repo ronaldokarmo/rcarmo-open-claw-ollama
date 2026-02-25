@@ -1,81 +1,86 @@
 services:
-    # OpenClaw - Main Application
-    openclaw:
-        build: .
-        container_name: openclaw
-        user: "1000:1000"
-        restart: always #unless-stopped
-        # Compartilha rede com Nginx para resolver localhost
-        network_mode: "service:nginx"
-        environment:
-            # API Keys para os diferentes providers
-            - GOOGLE_AI_KEY=${GOOGLE_AI_KEY}
-            - GROQ_API_KEY=${GROQ_API_KEY}
-            - OPENROUTER_API_KEY=${OPENROUTER_API_KEY}
-            - BRAVE_API_KEY=${BRAVE_API_KEY}
-            # Ollama Integration
-            - OLLAMA_API_BASE=${OLLAMA_API_BASE}
-            - OLLAMA_API_KEY=${OLLAMA_API_KEY:-ollama-local}
-            # Configurações do OpenClaw
-            - OPENCLAW_MODEL=openrouter/auto
-            - OPENCLAW_GATEWAY_TOKEN=${OPENCLAW_GATEWAY_TOKEN}
-            - OPENCLAW_HOME=/home/openclaw/.config/openclaw
-            - OPENCLAW_PORT=${OPENCLAW_PORT}
-            - LOG_LEVEL=INFO
-            - TZ=America/Sao_Paulo
-            - NODE_OPTIONS=--dns-result-order=ipv4first
-            # Adicionamos esta linha para forçar o sistema a achar o executável
-            - PATH=/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin:/home/openclaw/.local/bin:/app/node_modules/.bin
-        entrypoint: [ "/bin/bash", "/app/entrypoint.sh" ]
-        volumes:
-            - ./data:/home/openclaw/.config/openclaw
-            - ./logs:/home/openclaw/logs
-            - ./config/custom-config.yaml:/home/openclaw/.config/openclaw/custom-config.yaml:ro
-            - /mnt/e:/mnt/e-drive
-            - ./entrypoint.sh:/app/entrypoint.sh
-        depends_on:
-            nginx:
-                condition: service_started
-            ollama:
-                condition: service_started
+  # OpenClaw - Main Application
+  openclaw:
+    build: .
+    container_name: openclaw
+    user: "1000:1000"
+    restart: always #unless-stopped
+    networks:
+      - openclaw-net
+    ports:
+      - "18789" # Expondo internamente sem fixar no host para evitar conflito
+    environment:
+      # API Keys para os diferentes providers
+      - GOOGLE_AI_KEY=${GOOGLE_AI_KEY}
+      - GROQ_API_KEY=${GROQ_API_KEY}
+      - OPENROUTER_API_KEY=${OPENROUTER_API_KEY}
+      - BRAVE_API_KEY=${BRAVE_API_KEY}
+      # Ollama Integration
+      - OLLAMA_API_BASE=${OLLAMA_API_BASE}
+      - OLLAMA_API_KEY=${OLLAMA_API_KEY:-ollama-local}
+      # Configurações do OpenClaw
+      - OPENCLAW_MODEL=ollama/llama3.1-fast:latest
+      - OPENCLAW_GATEWAY_TOKEN=${OPENCLAW_GATEWAY_TOKEN}
+      - TELEGRAM_BOT_TOKEN=${TELEGRAM_BOT_TOKEN}
+      - OPENCLAW_HOME=/home/openclaw/.config/openclaw
+      - OPENCLAW_PORT=${OPENCLAW_PORT}
+      - LOG_LEVEL=INFO
+      - TZ=America/Sao_Paulo
+      - NODE_OPTIONS=--dns-result-order=ipv4first
+      # Adicionamos esta linha para forçar o sistema a achar o executável
+      - PATH=/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin:/home/openclaw/.local/bin:/app/node_modules/.bin
+    entrypoint: [ "/bin/bash", "/app/entrypoint.sh" ]
+    volumes:
+      - ./data:/home/openclaw/.config/openclaw
+      - ./logs:/home/openclaw/logs
+      - ./config/custom-config.yaml:/home/openclaw/.config/openclaw/.openclaw/custom-config.yaml:ro
+      - /mnt/e:/mnt/e-drive
+      - ./entrypoint.sh:/app/entrypoint.sh
+    depends_on:
+      nginx:
+        condition: service_started
+      ollama:
+        condition: service_started
 
-    # Nginx - Reverse Proxy
-    nginx:
-        image: nginx:alpine
-        container_name: openclaw-proxy
-        restart: unless-stopped
-        ports:
-            - "80:80" # OpenClaw via HTTP
-            - "18790:18789" # OpenClaw direto
-            - "443:443" # HTTPS
-        volumes:
-            - ./nginx/conf.d:/etc/nginx/conf.d:ro
-            - ./nginx/ssl:/etc/nginx/ssl:ro
-        networks:
-            - openclaw-net
+  # Nginx - Reverse Proxy
+  nginx:
+    image: nginx:alpine
+    container_name: openclaw-proxy
+    restart: unless-stopped
+    ports:
+      - "80:80" # OpenClaw via HTTP
+      - "18789:18789" # OpenClaw direto
+      - "443:443" # HTTPS
+    volumes:
+      - ./nginx/conf.d:/etc/nginx/conf.d:ro
+      - ./nginx/ssl:/etc/nginx/ssl:ro
+    networks:
+      - openclaw-net
 
-    # Ollama - Local LLM Runner
-    ollama:
-        image: ollama/ollama:latest
-        container_name: ollama
-        restart: unless-stopped
-        environment:
-            - OLLAMA_CONTEXT_LENGTH=16384
-            - OLLAMA_FLASH_ATTENTION=1
-            - OLLAMA_NUM_PARALLEL=1
-        volumes:
-            - ./ollama_data:/root/.ollama
-        networks:
-            - openclaw-net
-        # Ativado para GPU NVIDIA RTX 4060
-        deploy:
-            resources:
-                reservations:
-                    devices:
-                        - driver: nvidia
-                          count: 1
-                          capabilities: [ gpu ]
+  # Ollama - Local LLM Runner
+  ollama:
+    image: ollama/ollama:latest
+    container_name: ollama
+    restart: unless-stopped
+    environment:
+      - OLLAMA_CONTEXT_LENGTH=16384
+      - OLLAMA_FLASH_ATTENTION=1
+      - OLLAMA_NUM_PARALLEL=1
+      - OLLAMA_HOST=0.0.0.0
+      - OLLAMA_ORIGINS=*
+    volumes:
+      - ./ollama_data:/root/.ollama
+    networks:
+      - openclaw-net
+    # Ativado para GPU NVIDIA RTX 4060
+    deploy:
+      resources:
+        reservations:
+          devices:
+            - driver: nvidia
+              count: 1
+              capabilities: [ gpu ]
 
 networks:
-    openclaw-net:
-        driver: bridge
+  openclaw-net:
+    driver: bridge
