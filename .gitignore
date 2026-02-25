@@ -17,3 +17,7 @@ instrucoes.txt
 # OS Files
 Thumbs.db
 .DS_Store
+
+# Custom Ignores
+Skills-para-LLMs*.png
+data-bkp-*/
