@@ -3,7 +3,6 @@ services:
   openclaw:
     build: .
     container_name: openclaw
-    user: "1000:1000"
     restart: always #unless-stopped
     networks:
       - openclaw-net
@@ -36,6 +35,10 @@ services:
       - ./config/custom-config.yaml:/home/openclaw/.config/openclaw/.openclaw/custom-config.yaml:ro
       - /mnt/e:/mnt/e-drive
       - ./entrypoint.sh:/app/entrypoint.sh
+      # LINHA ESSENCIAL ADICIONADA:
+      - /var/run/docker.sock:/var/run/docker.sock
+    group_add:
+      - "1001"
     depends_on:
       nginx:
         condition: service_started

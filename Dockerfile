@@ -8,7 +8,7 @@ ENV DEBIAN_FRONTEND=noninteractive
 ENV OPENCLAW_VERSION=latest
 ENV PYTHONUNBUFFERED=1
 
-# Atualiza e instala dependências básicas
+# 1. ATUALIZAÇÃO: Incluímos docker.io nas dependências para resolver o ENOENT
 RUN apt-get update && apt-get install -y \
     curl \
     vim \
@@ -21,6 +21,8 @@ RUN apt-get update && apt-get install -y \
     gnupg \
     lsb-release \
     software-properties-common \
+    docker.io \
+    gosu \
     && apt-get clean \
     && rm -rf /var/lib/apt/lists/*
 
@@ -31,13 +33,16 @@ RUN curl -fsSL https://deb.nodesource.com/setup_22.x | bash - \
     && rm -rf /var/lib/apt/lists/*
 
 # Cria um usuário não-root para segurança
-RUN useradd -m -u 1000 -s /bin/bash openclaw \
-    && mkdir -p /app /data /logs /home/openclaw/.local/bin \
-    && chown -R openclaw:openclaw /app /data /logs /home/openclaw
+RUN useradd -m -u 1000 -s /bin/bash openclaw && \
+    usermod -aG root openclaw && \
+    mkdir -p /app /data /logs /home/openclaw/.local/bin && \
+    chown -R openclaw:openclaw /app /data /logs /home/openclaw
 
-# Instala OpenClaw GLOBALMENTE para evitar problemas de PATH
-# E permite que o script use o binário de qualquer lugar
+# Instala OpenClaw GLOBALMENTE
 RUN npm install -g openclaw@latest --unsafe-perm
+
+# Symlink do docker para /usr/local/bin (acessível em subshells restritos)
+RUN ln -sf /usr/bin/docker /usr/local/bin/docker
 
 # Diretório de trabalho
 WORKDIR /app
@@ -45,28 +50,24 @@ WORKDIR /app
 # Configura variáveis de ambiente
 ENV PATH="/usr/bin:/usr/local/bin:/home/openclaw/.local/bin:${PATH}"
 ENV OPENCLAW_HOME=/home/openclaw/.config/openclaw
-ENV PYTHONUNBUFFERED=1
 
-# Copia script de entrada e garante que tenha quebras de linha Unix (LF)
+# Copia script de entrada
 COPY --chown=openclaw:openclaw entrypoint.sh /app/entrypoint.sh
 RUN sed -i 's/\r$//' /app/entrypoint.sh && chmod +x /app/entrypoint.sh
 
-# Muda para usuário não-root
-USER openclaw
+# Muda para usuário root para permitir ajustes no socket no entrypoint
+USER root
 
 # Cria diretórios de configuração
 RUN mkdir -p ${OPENCLAW_HOME} /home/openclaw/.cache
 
-# Expor portas necessárias
+# Expor portas
 EXPOSE 18789
 
-# Configura volumes para persistência
+# Configura volumes
 VOLUME ["/home/openclaw/.config/openclaw", "/data", "/logs"]
 
-# Health check para verificar se o serviço está saudável
 HEALTHCHECK --interval=30s --timeout=10s --start-period=5s --retries=3 \
     CMD curl -f http://localhost:18789/health || exit 1
 
-# Comando de inicialização
 ENTRYPOINT ["/bin/bash", "/app/entrypoint.sh"]
-CMD []
