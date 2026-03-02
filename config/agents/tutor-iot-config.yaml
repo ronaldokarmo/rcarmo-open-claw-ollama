@@ -1,0 +1,29 @@
+agent:
+  id: tutor-iot
+  name: "tutor-iot"
+  role: "specialist"
+  description: "Tutor especializado em IoT, Arduino e eletrônica"
+  capabilities:
+    - arduino-programming
+    - esp32-development
+    - circuit-design
+    - sensor-integration
+    - iot-protocols
+    - troubleshooting
+  keywords:
+    - arduino
+    - esp32
+    - sensor
+    - circuit
+    - circuito
+    - iot
+    - mqtt
+    - gpio
+    - i2c
+    - spi
+    - led
+    - motor
+    - servo
+  model:
+    primary: "ollama/llama3.2:latest"
+    contextWindow: 8192

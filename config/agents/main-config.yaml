@@ -1,0 +1,15 @@
+agent:
+  id: main
+  name: "main"
+  role: "coordinator"
+  description: "Agente principal que roteia e coordena conversas"
+  capabilities:
+    - routing
+    - general-conversation
+    - task-delegation
+    - context-management
+  subagents:
+    - tutor-english
+    - tutor-iot
+  model:
+    primary: "ollama/llama3.2:latest"

@@ -1,0 +1,9 @@
+routing:
+  enabled: true
+  strategy: "skill-based"
+  rules:
+    - agent: tutor-english
+      keywords: ["english", "inglês", "grammar", "gramática", "vocabulary", "vocabulário", "translate", "traduzir", "pronunciation", "pronúncia"]
+    - agent: tutor-iot
+      keywords: ["arduino", "esp32", "sensor", "circuit", "circuito", "iot", "mqtt", "gpio", "i2c", "spi", "led", "motor", "servo"]
+  defaultFallback: main

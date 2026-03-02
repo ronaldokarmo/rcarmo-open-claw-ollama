@@ -1,73 +1,94 @@
-# Use uma imagem base mais leve para produção
-FROM ubuntu:22.04 AS builder
+# ─────────────────────────────────────────────
+# Stage 1: deps — instala Node.js e dependências do sistema
+# ─────────────────────────────────────────────
+FROM ubuntu:22.04 AS deps
 
-# Evita prompts interativos durante a instalação
 ENV DEBIAN_FRONTEND=noninteractive
 
-# Define variáveis de ambiente para versões
-ENV OPENCLAW_VERSION=latest
+RUN apt-get update && apt-get install -y --no-install-recommends \
+    curl \
+    ca-certificates \
+    gnupg \
+    lsb-release \
+    && rm -rf /var/lib/apt/lists/*
+
+# Instala Node.js v22 via nodesource
+RUN curl -fsSL https://deb.nodesource.com/setup_22.x | bash - \
+    && apt-get install -y --no-install-recommends nodejs \
+    && rm -rf /var/lib/apt/lists/*
+
+# ─────────────────────────────────────────────
+# Stage 2: runtime — imagem final enxuta
+# ─────────────────────────────────────────────
+FROM ubuntu:22.04 AS runtime
+
+ENV DEBIAN_FRONTEND=noninteractive
 ENV PYTHONUNBUFFERED=1
 
-# 1. ATUALIZAÇÃO: Incluímos docker.io nas dependências para resolver o ENOENT
-RUN apt-get update && apt-get install -y \
+# Dependências mínimas de runtime INCLUINDO Node.js setup
+RUN apt-get update && apt-get install -y --no-install-recommends \
     curl \
-    vim \
     ca-certificates \
+    gnupg \
     git \
     python3 \
     python3-pip \
-    python3-venv \
-    wget \
-    gnupg \
-    lsb-release \
-    software-properties-common \
-    docker.io \
     gosu \
-    && apt-get clean \
-    && rm -rf /var/lib/apt/lists/*
+    docker.io \
+    vim \
+    lsof \
+    psmisc \
+    && curl -fsSL https://deb.nodesource.com/setup_22.x | bash - \
+    && apt-get install -y --no-install-recommends nodejs \
+    && rm -rf /var/lib/apt/lists/* \
+    && apt-get clean
 
-# Instala Node.js v22 (Requisito OpenClaw)
-RUN curl -fsSL https://deb.nodesource.com/setup_22.x | bash - \
-    && apt-get install -y nodejs sudo \
-    && apt-get clean \
-    && rm -rf /var/lib/apt/lists/*
+# Usuário não-root dedicado
+RUN useradd -m -u 1000 -s /bin/bash openclaw \
+    && mkdir -p \
+    /app \
+    /home/openclaw/.local/bin \
+    /home/openclaw/.openclaw \
+    /home/openclaw/.cache \
+    && chown -R openclaw:openclaw \
+    /home/openclaw
 
-# Cria um usuário não-root para segurança
-RUN useradd -m -u 1000 -s /bin/bash openclaw && \
-    usermod -aG root openclaw && \
-    mkdir -p /app /data /logs /home/openclaw/.local/bin && \
-    chown -R openclaw:openclaw /app /data /logs /home/openclaw
+# Instala OpenClaw globalmente
+ARG OPENCLAW_VERSION=latest
+RUN npm install -g openclaw@${OPENCLAW_VERSION} --unsafe-perm \
+    && npm cache clean --force
 
-# Instala OpenClaw GLOBALMENTE
-RUN npm install -g openclaw@latest --unsafe-perm
-
-# Symlink do docker para /usr/local/bin (acessível em subshells restritos)
+# Symlink docker CLI
 RUN ln -sf /usr/bin/docker /usr/local/bin/docker
 
-# Diretório de trabalho
+# Variáveis de ambiente - CORRIGIDO OPENCLAW_HOME
+ENV PATH="/usr/local/bin:/usr/bin:/home/openclaw/.local/bin:${PATH}"
+ENV OPENCLAW_HOME=/home/openclaw
+ENV NODE_OPTIONS="--dns-result-order=ipv4first"
+
 WORKDIR /app
 
-# Configura variáveis de ambiente
-ENV PATH="/usr/bin:/usr/local/bin:/home/openclaw/.local/bin:${PATH}"
-ENV OPENCLAW_HOME=/home/openclaw/.config/openclaw
-
-# Copia script de entrada
+# Copia e sanitiza o entrypoint
 COPY --chown=openclaw:openclaw entrypoint.sh /app/entrypoint.sh
-RUN sed -i 's/\r$//' /app/entrypoint.sh && chmod +x /app/entrypoint.sh
+RUN sed -i 's/\r$//' /app/entrypoint.sh \
+    && chmod +x /app/entrypoint.sh \
+    && bash -n /app/entrypoint.sh
 
-# Muda para usuário root para permitir ajustes no socket no entrypoint
+# Expõe porta do gateway
+EXPOSE 18790
+
+# Volumes persistentes
+VOLUME ["/home/openclaw/.openclaw"]
+
+# Healthcheck
+HEALTHCHECK \
+    --interval=30s \
+    --timeout=10s \
+    --start-period=60s \
+    --retries=5 \
+    CMD curl -sf -o /dev/null -w "%{http_code}" http://localhost:18790/ \
+    | grep -qE "^(200|405)$" || exit 1
+
 USER root
-
-# Cria diretórios de configuração
-RUN mkdir -p ${OPENCLAW_HOME} /home/openclaw/.cache
-
-# Expor portas
-EXPOSE 18789
-
-# Configura volumes
-VOLUME ["/home/openclaw/.config/openclaw", "/data", "/logs"]
-
-HEALTHCHECK --interval=30s --timeout=10s --start-period=5s --retries=3 \
-    CMD curl -f http://localhost:18789/health || exit 1
 
 ENTRYPOINT ["/bin/bash", "/app/entrypoint.sh"]

@@ -1,0 +1,25 @@
+agent:
+  id: tutor-english
+  name: "tutor-english"
+  role: "specialist"
+  description: "Tutor especializado em ensino de inglês"
+  capabilities:
+    - english-grammar
+    - vocabulary-teaching
+    - writing-assistance
+    - pronunciation-guide
+    - conversation-practice
+  keywords:
+    - english
+    - inglês
+    - grammar
+    - gramática
+    - vocabulary
+    - vocabulário
+    - translate
+    - traduzir
+    - pronunciation
+    - pronúncia
+  model:
+    primary: "ollama/llama3.2:latest"
+    contextWindow: 8192

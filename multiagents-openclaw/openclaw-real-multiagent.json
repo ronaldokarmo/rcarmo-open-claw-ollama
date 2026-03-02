@@ -1,0 +1,154 @@
+{
+    "meta": {
+        "lastTouchedVersion": "2026.2.26",
+        "lastTouchedAt": "2026-03-01T21:00:00.000Z",
+        "description": "Multiagentes - Compatível com OpenClaw 2026.2.26"
+    },
+    "env": {
+        "vars": {
+            "TELEGRAM_BOT_TOKEN": "${TELEGRAM_BOT_TOKEN}",
+            "OPENROUTER_API_KEY": "${OPENROUTER_API_KEY}",
+            "BRAVE_API_KEY": "${BRAVE_API_KEY}",
+            "OLLAMA_API_BASE": "${OLLAMA_API_BASE}",
+            "OLLAMA_API_KEY": "${OLLAMA_API_KEY}",
+            "OPENCLAW_GATEWAY_TOKEN": "${OPENCLAW_GATEWAY_TOKEN}",
+            "OPENCLAW_GATEWAY_PASSWORD": "${OPENCLAW_GATEWAY_PASSWORD}"
+        }
+    },
+    "logging": {
+        "level": "info"
+    },
+    "models": {
+        "providers": {
+            "ollama": {
+                "baseUrl": "${OLLAMA_API_BASE}",
+                "apiKey": "${OLLAMA_API_KEY}",
+                "api": "ollama",
+                "models": [
+                    {
+                        "id": "qwen2.5:1.5b",
+                        "name": "Qwen 1.5B",
+                        "contextWindow": 8192,
+                        "maxTokens": 2048
+                    },
+                    {
+                        "id": "llama3.2:1b",
+                        "name": "Llama 1B",
+                        "contextWindow": 8192,
+                        "maxTokens": 2048
+                    },
+                    {
+                        "id": "smollm2:1.7b",
+                        "name": "SmolLM2 1.7B",
+                        "contextWindow": 8192,
+                        "maxTokens": 2048
+                    },
+                    {
+                        "id": "phi3.5",
+                        "name": "Phi 3.5",
+                        "contextWindow": 8192,
+                        "maxTokens": 2048
+                    }
+                ]
+            }
+        }
+    },
+    "agents": {
+        "defaults": {
+            "model": "ollama/qwen2.5:1.5b",
+            "memorySearch": {
+                "enabled": false
+            },
+            "compaction": {
+                "mode": "safeguard"
+            },
+            "heartbeat": {
+                "every": "30m",
+                "model": "ollama/llama3.2:1b",
+                "target": "last"
+            },
+            "maxConcurrent": 1,
+            "subagents": {
+                "maxConcurrent": 1,
+                "archiveAfterMinutes": 30,
+                "model": "ollama/llama3.2:1b"
+            },
+            "sandbox": {
+                "mode": "off"
+            }
+        },
+        "list": [
+            {
+                "id": "main",
+                "name": "Assistente Geral",
+                "model": "ollama/qwen2.5:1.5b"
+            },
+            {
+                "id": "tutor-english",
+                "name": "Professor de Inglês",
+                "model": "ollama/smollm2:1.7b"
+            },
+            {
+                "id": "tutor-iot",
+                "name": "Engenheiro IoT",
+                "model": "ollama/phi3.5"
+            }
+        ]
+    },
+    "tools": {
+        "deny": [
+            "group:web",
+            "browser"
+        ]
+    },
+    "commands": {
+        "native": "auto",
+        "nativeSkills": "auto",
+        "restart": true,
+        "ownerDisplay": "raw"
+    },
+    "channels": {
+        "telegram": {
+            "enabled": true,
+            "dmPolicy": "pairing",
+            "groupPolicy": "allowlist",
+            "streaming": "off"
+        }
+    },
+    "gateway": {
+        "port": 18790,
+        "mode": "local",
+        "controlUi": {
+            "allowedOrigins": [
+                "http://localhost",
+                "http://localhost:18790",
+                "http://127.0.0.1",
+                "http://127.0.0.1:18790",
+                "http://172.18.0.1",
+                "http://172.18.0.1:18790",
+                "http://100.67.139.80",
+                "http://100.67.139.80:18790",
+                "*"
+            ],
+            "allowInsecureAuth": true,
+            "dangerouslyAllowHostHeaderOriginFallback": true
+        },
+        "auth": {
+            "mode": "token",
+            "token": "${OPENCLAW_GATEWAY_TOKEN}",
+            "password": "${OPENCLAW_GATEWAY_PASSWORD}"
+        },
+        "trustedProxies": [
+            "127.0.0.1",
+            "172.16.0.0/12",
+            "100.67.0.0/16",
+            "10.0.0.0/8"
+        ]
+    },
+    "plugins": {
+        "allow": [
+            "telegram",
+            "memory-core"
+        ]
+    }
+}
