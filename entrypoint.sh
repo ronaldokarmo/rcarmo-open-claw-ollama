@@ -6,6 +6,14 @@ warn() { echo -e "\033[1;33m[entrypoint]\033[0m $(date +%H:%M:%S) $1"; }
 error() { echo -e "\033[0;31m[entrypoint]\033[0m $(date +%H:%M:%S) $1"; }
 
 # ========================================
+# Garantir OPENCLAW_HOME
+# ========================================
+if [ -z "$OPENCLAW_HOME" ] || [ "$OPENCLAW_HOME" = "/" ]; then
+    warn "⚠️ OPENCLAW_HOME não definida ou inválida (/). Usando \$HOME ($HOME)"
+    OPENCLAW_HOME="$HOME"
+fi
+
+# ========================================
 # Verificar WSL2 systemd
 # ========================================
 check_wsl2_systemd() {
@@ -18,40 +26,35 @@ check_wsl2_systemd() {
             error "❌ systemd NÃO está habilitado no WSL2!"
             echo ""
             echo "╔════════════════════════════════════════════════════════════════╗"
-            echo "║                  ⚠️  AÇÃO NECESSÁRIA                          ║"
+            echo "║                  ⚠️  AÇÃO NECESSÁRIA (HOST)                   ║"
             echo "╚════════════════════════════════════════════════════════════════╝"
             echo ""
-            echo "  WSL2 precisa do systemd habilitado para Docker funcionar."
+            echo "  WSL2 precisa do systemd habilitado para OpenClaw funcionar."
             echo ""
-            echo "  📝 PASSOS PARA CORRIGIR:"
+            echo "  📝 PASSOS PARA CORRIGIR NO WINDOWS/POWERSHELL:"
             echo ""
-            echo "  1. No WSL2, edite o arquivo /etc/wsl.conf:"
+            echo "  1. No WSL2, edite o arquivo /etc/wsl.conf (fora do container):"
             echo "     sudo nano /etc/wsl.conf"
             echo ""
             echo "  2. Adicione estas linhas:"
-            echo "     ┌────────────────────┐"
-            echo "     │ [boot]             │"
-            echo "     │ systemd=true       │"
-            echo "     └────────────────────┘"
+            echo "     [boot]"
+            echo "     systemd=true"
             echo ""
-            echo "  3. Salve (Ctrl+O, Enter, Ctrl+X)"
-            echo ""
-            echo "  4. No PowerShell (como Administrador), execute:"
+            echo "  3. No PowerShell (como Administrador), execute:"
             echo "     wsl --shutdown"
             echo ""
-            echo "  5. Reabra sua distribuição WSL2"
+            echo "  4. Reabra seu terminal WSL2 e reinicie o projeto."
             echo ""
-            echo "  6. Verifique se funcionou:"
-            echo "     systemctl --version"
+            echo "  🔍 Verificação: systemctl --user status"
             echo ""
             echo "╚════════════════════════════════════════════════════════════════╝"
             echo ""
             
-            # Aguarda 10 segundos para usuário ler
-            sleep 10
+            # Aguarda 5 segundos para usuário ler
+            sleep 5
             
-            # Tenta continuar mesmo assim (pode falhar depois)
-            warn "⚠️  Tentando continuar sem systemd (pode falhar)..."
+            # Tenta continuar mesmo assim
+            warn "⚠️ Tentando continuar sem systemd (pode haver falhas)..."
         else
             log "✅ systemd habilitado (versão: $(systemctl --version | head -1))"
         fi
@@ -64,50 +67,34 @@ check_wsl2_systemd() {
 check_and_fix_permissions() {
     local openclaw_dir="${OPENCLAW_HOME}/.openclaw"
     local config_file="${openclaw_dir}/openclaw.json"
-    local needs_fix=false
     
-    log "🔐 Verificando permissões de segurança..."
+    log "🔐 Corrigindo permissões de segurança..."
     
-    # Verificar permissões do diretório .openclaw
-    if [ -d "$openclaw_dir" ]; then
-        local dir_perms=$(stat -c '%a' "$openclaw_dir" 2>/dev/null || stat -f '%A' "$openclaw_dir" 2>/dev/null)
-        
-        if [ "$dir_perms" != "700" ] && [ "$dir_perms" != "750" ]; then
-            warn "⚠️  Diretório $openclaw_dir tem permissões muito abertas ($dir_perms)"
-            log "   Corrigindo para 700 (apenas owner)..."
-            chmod 700 "$openclaw_dir"
-            needs_fix=true
-        fi
-    fi
-    
-    # Verificar permissões do arquivo openclaw.json
-    if [ -f "$config_file" ]; then
-        local file_perms=$(stat -c '%a' "$config_file" 2>/dev/null || stat -f '%A' "$config_file" 2>/dev/null)
-        
-        if [ "$file_perms" != "600" ]; then
-            warn "⚠️  Arquivo $config_file é legível por grupo/outros ($file_perms)"
-            log "   Corrigindo para 600 (apenas owner)..."
-            chmod 600 "$config_file"
-            needs_fix=true
-        fi
-    fi
-    
-    # Garantir ownership correto
-    log "   Corrigindo ownership..."
+    # Garantir ownership primeiro
     chown -R openclaw:openclaw "$openclaw_dir" 2>/dev/null || true
     
-    if [ "$needs_fix" = true ]; then
-        log "✅ Permissões de segurança corrigidas!"
-    else
-        log "✅ Permissões de segurança OK"
+    # Tentar forçar permissões restritas
+    if [ -d "$openclaw_dir" ]; then
+        chmod 700 "$openclaw_dir" 2>/dev/null || true
+        local dir_perms=$(stat -c '%a' "$openclaw_dir" 2>/dev/null || echo "unknown")
+        
+        if [ "$dir_perms" != "700" ] && [[ "$dir_perms" != "unknown" ]]; then
+            warn "⚠️ Não foi possível definir permissões 700 em $openclaw_dir (atual: $dir_perms)"
+            warn "   Isso ocorre em volumes montados do Windows (E:\) sem suporte a metatada."
+            warn "   DICA: Use o sistema de arquivos nativo do WSL (ex: ~/openclaw-docker) para evitar isso."
+        fi
     fi
     
-    # Mostrar estado final
-    if [ -d "$openclaw_dir" ]; then
-        log "📋 Estado final das permissões:"
-        ls -la "$openclaw_dir" | head -3
-        [ -f "$config_file" ] && ls -la "$config_file"
+    if [ -f "$config_file" ]; then
+        chmod 600 "$config_file" 2>/dev/null || true
+        local file_perms=$(stat -c '%a' "$config_file" 2>/dev/null || echo "unknown")
+        
+        if [ "$file_perms" != "600" ] && [[ "$file_perms" != "unknown" ]]; then
+            warn "⚠️ Não foi possível definir permissões 600 em $config_file (atual: $file_perms)"
+        fi
     fi
+    
+    log "✅ Verificação de permissões concluída."
 }
 
 # ========================================
@@ -118,7 +105,7 @@ check_and_fix_permissions() {
 check_wsl2_systemd
 
 # Check Docker socket
-[ -S /var/run/docker.sock ] && log "✅ Docker socket detectado" || warn "⚠️  Docker socket não encontrado"
+[ -S /var/run/docker.sock ] && log "✅ Docker socket detectado" || warn "⚠️ Docker socket não encontrado"
 
 # Create directories
 log "Criando estrutura de diretórios..."
