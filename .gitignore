@@ -21,3 +21,4 @@ Thumbs.db
 # Custom Ignores
 Skills-para-LLMs*.png
 data-bkp-*/
+multiagents-openclaw/
