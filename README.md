@@ -61,6 +61,41 @@ nano .env
 ```bash
 docker-compose up -d
 ```
+---
+
+Documento de restauração criado com sucesso! 📄
+
+## **Guia Completo de Restauração Criado**
+
+**Arquivo**: `GUIDA-RESTAURACAO-BACKUPS.md`
+**Localização**: `/home/openclaw/.openclaw/workspace/`
+
+## **Conteúdo do Guia:**
+
+### 📋 **Estrutura Completa**
+- ✅ **Visão Geral** - Entendimento do processo
+- ✅ **Backup Disponíveis** - Detalhes dos arquivos de backup
+- ✅ **Preparação** - Verificação de espaço e preparação do ambiente
+- ✅ **Restauração OpenClaw** - Passo a passo completo
+- ✅ **Restauração Docker** - Configuração específica
+- ✅ **Configuração Pós-Restauração** - Ajustes finais
+- ✅ **Verificação Final** - Checklist completo
+- ✅ **Troubleshooting** - Soluções para problemas comuns
+
+### 🔧 **Recursos Práticos**
+- **Checklists** - Verificação passo a passo
+- **Comandos Exatos** - Copy-paste dos comandos necessários
+- **Tabela de Verificação** - Status esperado para cada item
+- **Soluções de Problemas** - Respostas para erros comuns
+
+### 🎯 **Destaques do Guia**
+1. **Segurança** - Inclui medidas de permissões críticas
+2. **Completude** - Abrange OpenClaw e Docker
+3. **Praticidade** - Comandos prontos para executar
+4. **Prevenção** - Backup pré-restauração opcional
+5. **Diagnóstico** - Comandos de verificação completa
+
+O guia está agora disponível em seu workspace e pode ser acessado sempre que precisar restaurar seus backups!
 
 ---
 
@@ -70,7 +105,7 @@ O sistema utiliza roteamento automático baseado em intenção e palavras-chave.
 
 - **Geral**: "Olá, como você está?" (Respondido pelo `main`)
 - **Inglês**: "Como digo 'alcançar' em inglês?" (Delegado ao `tutor-english`)
-- **IoT**: "Como ler um sensor DHT22 no ESP32?" (Delegado ao `tutor-iot`)
+- **IoT**: "Como configurar o ESP32 para ler sensores?" (Delegado ao `tutor-iot`)
 
 ---
 
@@ -99,4 +134,3 @@ O projeto está configurado no `docker-compose.yml` para rodar em sistemas com *
 Este projeto é uma implementação customizada baseada no [OpenClaw](https://github.com/openclaw/openclaw).
 
 ---
-*Gerado automaticamente pelo Agente Antigravity em 2026-03-02*
