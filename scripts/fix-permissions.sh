@@ -1,33 +1,16 @@
 #!/bin/bash
-# fix-permissions.sh
-# Corrige permissões do OpenClaw
 
-set -e
+echo "🐳 Reparando OpenClaw através do Docker..."
 
-echo "🔧 Corrigindo permissões do OpenClaw..."
+# 1. Definir o modo do gateway diretamente via comando oficial do OpenClaw
+# Isso corrige o erro de sintaxe e o bloqueio do gateway ao mesmo tempo
+docker-compose run --rm gateway openclaw config set gateway.mode local
 
-# Parar container
-echo "⏸️  Parando container..."
-docker-compose stop openclaw
+# 2. Corrigir a política do Telegram para evitar mensagens perdidas
+docker-compose run --rm gateway openclaw config set channels.telegram.groupPolicy open
 
-# Corrigir permissões
-echo "🔐 Ajustando permissões..."
-sudo chown -R 1000:1000 data/.openclaw/
-sudo chmod -R 750 data/.openclaw/
+echo "---"
+echo "♻️ Reiniciando os serviços..."
+docker-compose restart
 
-# Verificar
-echo ""
-echo "📋 Verificando permissões:"
-ls -la data/.openclaw/openclaw.json
-
-# Reiniciar
-echo ""
-echo "🚀 Reiniciando OpenClaw..."
-docker-compose up -d openclaw
-
-echo ""
-echo "✅ Pronto! Monitorando logs..."
-echo "   (Pressione Ctrl+C para sair)"
-echo ""
-sleep 3
-docker-compose logs -f openclaw
+echo "✅ Concluído! Verifique os logs agora."

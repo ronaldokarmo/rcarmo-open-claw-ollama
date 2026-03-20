@@ -13,11 +13,11 @@ services:
       - GOOGLE_AI_KEY=${GOOGLE_AI_KEY}
       - GROQ_API_KEY=${GROQ_API_KEY}
       - OPENROUTER_API_KEY=${OPENROUTER_API_KEY}
-      - BRAVE_API_KEY=${BRAVE_API_KEY}
+      - MOONSHOT_API_KEY=${MOONSHOT_API_KEY}
       - OLLAMA_API_BASE=${OLLAMA_API_BASE:-http://ollama:11434}
       - OLLAMA_API_KEY=${OLLAMA_API_KEY:-ollama-local}
       - OPENCLAW_HOME=/home/openclaw
-      - OPENCLAW_MODEL=ollama/llama3.2:3b
+      - OPENCLAW_MODEL=${OPENCLAW_MODEL:-ollama/qwen2.5:1.5b}
       - OPENCLAW_GATEWAY_TOKEN=${OPENCLAW_GATEWAY_TOKEN}
       - OPENCLAW_GATEWAY_PASSWORD=${OPENCLAW_GATEWAY_PASSWORD}
       - OPENCLAW_PORT=${OPENCLAW_PORT:-18790}
@@ -76,7 +76,7 @@ services:
       # ========================================
       # OTIMIZADO PARA 11GB RAM DISPONÍVEL
       # ========================================
-      - OLLAMA_CONTEXT_LENGTH=12288 # Reduzido para economizar RAM 16384
+      - OLLAMA_CONTEXT_LENGTH=8192 # Suficiente para modelos menores nos modelos
       - OLLAMA_FLASH_ATTENTION=1
       - OLLAMA_NUM_PARALLEL=1 # Apenas 1 requisição simultânea
       - OLLAMA_HOST=0.0.0.0
@@ -84,7 +84,7 @@ services:
       - OLLAMA_MAX_LOADED_MODELS=1 # Apenas 1 modelo na memória
       - OLLAMA_MAX_QUEUE=5 # Fila reduzida
       - OLLAMA_NUM_GPU=1
-      - OLLAMA_GPU_OVERHEAD=0.1 # 10% overhead para GPU
+      - OLLAMA_KEEP_ALIVE=5m # Descarrega modelos inativos após 5min
 
     volumes:
       - ./ollama_data:/root/.ollama
@@ -98,12 +98,12 @@ services:
               count: 1
               capabilities: [ gpu ]
         limits:
-          memory: 6G # Limite de 6GB para Ollama
+          memory: 8G # Reduzido - usando modelos menores como padrão
     healthcheck:
-      test: [ "CMD", "curl", "-sf", "http://localhost:11434/api/tags" ]
+      test: [ "CMD", "curl", "-sf", "http://localhost:11434/" ]
       interval: 30s
       timeout: 10s
-      retries: 3
+      retries: 5
       start_period: 120s
 
 networks:

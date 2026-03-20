@@ -4,7 +4,7 @@
 IMAGE_NAME = openclaw
 CONTAINER_NAME = openclaw
 PORT_HOST = 18790
-PORT_CONTAINER = 18789
+PORT_CONTAINER = 18790
 
 help:
 	@echo "Comandos disponíveis:"
