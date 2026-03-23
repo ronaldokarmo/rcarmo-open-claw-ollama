@@ -14,54 +14,6 @@ if [ -z "$OPENCLAW_HOME" ] || [ "$OPENCLAW_HOME" = "/" ]; then
 fi
 
 # ========================================
-# Verificar WSL2 systemd
-# ========================================
-# check_wsl2_systemd() {
-#     # Detecta se está rodando no WSL2
-#     if grep -qi microsoft /proc/version 2>/dev/null; then
-#         log "🐧 WSL2 detectado"
-        
-#         # Verifica se systemd está habilitado
-#         if ! systemctl --version >/dev/null 2>&1; then
-#             error "❌ systemd NÃO está habilitado no WSL2!"
-#             echo ""
-#             echo "╔════════════════════════════════════════════════════════════════╗"
-#             echo "║                  ⚠️  AÇÃO NECESSÁRIA (HOST)                   ║"
-#             echo "╚════════════════════════════════════════════════════════════════╝"
-#             echo ""
-#             echo "  WSL2 precisa do systemd habilitado para OpenClaw funcionar."
-#             echo ""
-#             echo "  📝 PASSOS PARA CORRIGIR NO WINDOWS/POWERSHELL:"
-#             echo ""
-#             echo "  1. No WSL2, edite o arquivo /etc/wsl.conf (fora do container):"
-#             echo "     sudo nano /etc/wsl.conf"
-#             echo ""
-#             echo "  2. Adicione estas linhas:"
-#             echo "     [boot]"
-#             echo "     systemd=true"
-#             echo ""
-#             echo "  3. No PowerShell (como Administrador), execute:"
-#             echo "     wsl --shutdown"
-#             echo ""
-#             echo "  4. Reabra seu terminal WSL2 e reinicie o projeto."
-#             echo ""
-#             echo "  🔍 Verificação: systemctl --user status"
-#             echo ""
-#             echo "╚════════════════════════════════════════════════════════════════╝"
-#             echo ""
-            
-#             # Aguarda 5 segundos para usuário ler
-#             sleep 5
-            
-#             # Tenta continuar mesmo assim
-#             warn "⚠️ Tentando continuar sem systemd (pode haver falhas)..."
-#         else
-#             log "✅ systemd habilitado (versão: $(systemctl --version | head -1))"
-#         fi
-#     fi
-# }
-
-# ========================================
 # Verificar e Corrigir Permissões de Segurança
 # ========================================
 check_and_fix_permissions() {
@@ -101,8 +53,6 @@ check_and_fix_permissions() {
 # Main checks
 # ========================================
 
-# Verificar WSL2 systemd primeiro
-# check_wsl2_systemd
 
 # Check Docker socket
 [ -S /var/run/docker.sock ] && log "✅ Docker socket detectado" || warn "⚠️ Docker socket não encontrado"
