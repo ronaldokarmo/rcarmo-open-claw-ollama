@@ -133,4 +133,4 @@ server.listen(18790, '0.0.0.0', () => {
 
 # Run gateway on internal port 18791 as PID 1 (exec ensures signals are forwarded correctly)
 # Using gosu to drop root privileges and run as openclaw user
-exec gosu openclaw openclaw gateway --port 18791 --force
+exec gosu openclaw openclaw gateway --port 18791
