@@ -35,10 +35,14 @@ services:
       - TZ=America/Sao_Paulo
       - OPENCLAW_CONTAINER_HINT=docker
       - NODE_OPTIONS=--dns-result-order=ipv4first
+      - OBSIDIAN_VAULT_PATH=/home/openclaw/obsidian
+      - VAULT_ROOT=/home/openclaw/obsidian/Knowledge
     volumes:
       - ./data/.openclaw:/home/openclaw/.openclaw
       - ./logs:/home/openclaw/logs
       - /var/run/docker.sock:/var/run/docker.sock:ro
+      # Obsidian Vault (leitura/escrita para o plugin memory-wiki)
+      - E:/obsidian/ai-data:/home/openclaw/obsidian:rw
     group_add:
       - "1001"
     depends_on:
