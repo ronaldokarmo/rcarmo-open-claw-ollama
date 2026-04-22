@@ -42,7 +42,7 @@ services:
       - ./logs:/home/openclaw/logs
       - /var/run/docker.sock:/var/run/docker.sock:ro
       # Obsidian Vault (leitura/escrita para o plugin memory-wiki)
-      - E:/obsidian/ai-data:/home/openclaw/obsidian:rw
+      - E:/obsidian/OpenClaw:/home/openclaw/obsidian:rw
     group_add:
       - "1001"
     depends_on:
