@@ -1,0 +1,11 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(obsidian open *)",
+      "Bash(mkdir -p \"E:/obsidian/OpenClaw/Memory/OpenClaw/tutorials\")",
+      "Bash(mkdir -p \"E:/obsidian/OpenClaw/Memory/OpenClaw/agents\")",
+      "Bash(copy \"C:/Users/ronal/.claude/projects/openclaw-docker/memory/MEMORY.md\" \"E:/obsidian/OpenClaw/Memory/OpenClaw/MEMORY.md\")",
+      "Bash(Copy-Item \"C:\\\\Users\\\\ronal\\\\.claude\\\\projects\\\\openclaw-docker\\\\memory\\\\MEMORY.md\" \"E:\\\\obsidian\\\\OpenClaw\\\\Memory\\\\OpenClaw\\\\MEMORY.md\")"
+    ]
+  }
+}

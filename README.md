@@ -6,7 +6,7 @@ Este projeto fornece um ambiente Docker completo e otimizado para rodar o **Open
 
 - **Múltiplos Agentes**: Configuração pronta para uso com 3 agentes:
   - `main`: Coordenador e roteador inteligente.
-  - `tutor-english`: Especialista em ensino de inglês.
+  - `english-tutor`: [Especialista em ensino de inglês](english-tutor/).
   - `tutor-iot`: Especialista em Arduino, ESP32 e eletrônica.
 - **Modelos Locais**: Integração profunda com Ollama para privacidade e economia.
 - **WSL2 Otimizado**: Scripts inclusos para garantir compatibilidade com systemd no Windows.
@@ -22,7 +22,7 @@ graph TD
     User([Usuário]) -->|Telegram / Web| Nginx[Nginx Proxy]
     Nginx -->|Port 18790| OC[OpenClaw Gateway]
     OC -->|Roteamento| Agents{Agentes}
-    Agents -->|English Specialist| TE[Tutor English]
+    Agents -->|English Specialist| TE[English Tutor](english-tutor/)
     Agents -->|IoT Specialist| TI[Tutor IoT]
     OC -->|API| Ollama[Ollama LLM]
     Ollama -->|GPU Accel| GPU((NVIDIA GPU))
@@ -104,7 +104,7 @@ O guia está agora disponível em seu workspace e pode ser acessado sempre que p
 O sistema utiliza roteamento automático baseado em intenção e palavras-chave.
 
 - **Geral**: "Olá, como você está?" (Respondido pelo `main`)
-- **Inglês**: "Como digo 'alcançar' em inglês?" (Delegado ao `tutor-english`)
+- **Inglês**: "Como digo 'alcançar' em inglês?" (Delegado ao [`english-tutor`](english-tutor/))
 - **IoT**: "Como configurar o ESP32 para ler sensores?" (Delegado ao `tutor-iot`)
 
 ---
