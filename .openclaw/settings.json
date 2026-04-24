@@ -1,0 +1,46 @@
+{
+  "server": {
+    "port": 18790,
+    "bind": "0.0.0.0",
+    "cors": true,
+    "cors_origins": [
+      "*"
+    ]
+  },
+  "model": {
+    "name": "ollama/qwen3.5",
+    "api_base": "http://ollama:11434/v1",
+    "max_tokens": 4096,
+    "temperature": 0.7,
+    "top_p": 0.9,
+    "top_k": 50
+  },
+  "gateway": {
+    "enabled": true,
+    "token": "${OPENCLAW_GATEWAY_TOKEN}",
+    "password": "${OPENCLAW_GATEWAY_PASSWORD}",
+    "bind": "0.0.0.0",
+    "cors": true
+  },
+  "memory": {
+    "limit": "2G",
+    "reservation": "1G"
+  },
+  "agents": {
+    "isolation": "workspace",
+    "routing": "skill-based"
+  },
+  "logging": {
+    "level": "info",
+    "format": "json",
+    "file": "logs/openclaw.log"
+  },
+  "multiagent": {
+    "enabled": true,
+    "mode": "enabled"
+  },
+  "obsidian": {
+    "vault_path": "/home/openclaw/obsidian",
+    "root": "/home/openclaw/obsidian/Knowledge"
+  }
+}
