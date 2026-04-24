@@ -7,15 +7,13 @@
 # ──────────────────────────────────────────────────────────
 
 # === STAGE 1: Builder ===
-FROM node:22-alpine AS builder
+FROM node:20-alpine AS builder
 
 WORKDIR /app
 
 # Instalar dependências globais (npm install -g)
-RUN npm config set unsafe-perm true && \
-    npm config set fund=false && \
-    npm config set progress=false && \
-    npm config set fund=false
+RUN npm config set fund=false && \
+    npm config set progress=false
 
 # Copiar package.json para instalação
 COPY package.json ./
@@ -26,7 +24,7 @@ RUN npm install -g openclaw
 COPY . .
 
 # === STAGE 2: Runtime Otimizado ===
-FROM node:22-alpine AS runtime
+FROM node:20-alpine AS runtime
 
 # Configurar variáveis de ambiente
 ENV OPENCLAW_HOME=/home/openclaw \
@@ -34,8 +32,8 @@ ENV OPENCLAW_HOME=/home/openclaw \
     OPENCLAW_LOG_LEVEL=warn
 
 # Criar usuário não-root
-RUN addgroup --system --gid 1000 openclaw && \
-    adduser --system --uid 1000 --ingroup openclaw --shell /bin/bash openclaw
+RUN addgroup --system --gid 1001 openclaw && \
+    adduser --system --uid 1001 --ingroup openclaw --shell /bin/bash openclaw
 
 # Criar diretórios
 RUN mkdir -p /home/openclaw/.openclaw && \
@@ -47,7 +45,7 @@ COPY --from=builder /usr/local/lib/node_modules /usr/local/lib/node_modules
 COPY --from=builder --chown=openclaw:openclaw /app /app
 
 # Configurar usuário
-USER openclaw
+USER 1001
 WORKDIR /app
 
 # Expor porta

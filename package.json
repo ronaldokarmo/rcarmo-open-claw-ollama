@@ -1,0 +1,14 @@
+{
+  "name": "openclaw-root",
+  "version": "1.0.0",
+  "description": "OpenClaw - Agentes Inteligentes",
+  "main": "entrypoint.js",
+  "scripts": {
+    "start": "node entrypoint.js",
+    "health": "node -e \"require('http').get('http://localhost:18790/health', r=>process.stdout.write(r.statusCode==200?'OK':'FAIL'))\""
+  },
+  "dependencies": {},
+  "engines": {
+    "node": ">=18.0.0"
+  }
+}
