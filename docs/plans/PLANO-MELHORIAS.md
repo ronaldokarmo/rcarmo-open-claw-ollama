@@ -1,576 +1,326 @@
 # Plano de Melhorias do OpenClaw Docker
 
+> **Revisão Crítica:** `2026-04-25`
+> Plano auditado contra o estado real do projeto. Itens já implementados foram movidos para o [Plano de Limpeza](#-plano-de-limpeza--consolidação). Itens incorretos foram removidos.
+
+---
+
 ## 📋 Contexto
 
-O projeto OpenClaw é uma plataforma de rede de agentes LLM que requer otimizações contínuas em performance, segurança, observabilidade e experiência do usuário.
+O projeto OpenClaw é uma plataforma de rede de agentes LLM baseada em **Node.js** (não Python), rodando via `openclaw gateway` num container Alpine. O ambiente atual conta com:
+
+- `openclaw` container (Node.js 20 Alpine, multi-stage)
+- `ollama` container (GPU NVIDIA RTX 4060, 8GB VRAM)
+- `nginx` container (proxy reverso)
+- `hermes` container (agente auxiliar)
+- Plugin `memory-wiki` integrado com Obsidian Vault
+- Agentes ativos: `main`, `tutor-english`, `tutor-iot`, `prompt-engineer`
 
 ---
 
-## 🎯 Melhoria 1: Dockerfile Multi-stage
+## 🚨 MELHORIAS P0 — CRÍTICO (Problemas Ativos)
 
-### Problema
-O Dockerfile atual não está otimizado para produção, resultando em imagem grande e vulnerável.
+### Problema 1: Modelos Cloud causando erro 403
 
-### Solução
+**Diagnóstico:**
+O `openclaw.json` define como modelo primário `ollama/kimi-k2.6:cloud` com fallback para `ollama/kimi-k2.5:cloud`. Esses modelos estão registrados sob o provider `ollama` mas são serviços de nuvem que **requerem assinatura paga** — causando erro `403: this model requires a subscription` em produção.
 
-#### Criar imagem base otimizada:
-```dockerfile
-# Stage 1: Build (não publicada)
-FROM python:3.11-slim-bookworm AS builder
-
-WORKDIR /app
-COPY requirements.txt .
-RUN pip install --no-cache-dir --user -r requirements.txt
-
-#### Criar imagem final com camadas otimizadas:
-FROM python:3.11-slim-bookworm AS final
-
-LABEL maintainer="openclaw@example.com"
-LABEL version="1.0"
-
-# Sistema de arquivos otimizado
-RUN mkdir -p /app /data /logs && \
-    chown -R 1000:1000 /app /data /logs
-
-# Instalar dependências mínimas
-RUN apt-get update && apt-get install -y --no-install-recommends \
-    curl \
-    git \
-    && rm -rf /var/lib/apt/lists/*
-
-WORKDIR /app
-
-# Copiar dependências do stage builder
-COPY --from=builder /root/.local /root/.local
-COPY --from=builder /root/.local/bin /root/.local/bin
-COPY --from=builder /root/.local/lib /root/.local/lib
-COPY --from=builder /root/.cache /root/.cache
-COPY . .
-
-# Instalar ferramentas de monitoramento (opcionais)
-RUN apt-get install -y --no-install-recommends \
-    uv \
-    && rm -rf /var/lib/apt/lists/*
-
-# Instalar pip user local
-ENV PATH="/root/.local/bin:$PATH"
-ENV PYTHONPATH="/root/.local/lib/python3.11/site-packages"
-
-ENV HOME=/home/app
-ENV PYTHONPATH=/app
-
-WORKDIR /app
-COPY . .
-COPY --from=builder /root/.cache /root/.cache
-
-# Criar usuário não-root
-RUN adduser --disabled-password --gecos '' appuser && \
-    usermod -aG docker appuser && \
-    chown -R appuser:appuser /app && \
-    chmod -R 755 /app
-
-USER appuser
-
-# Instalar uv globalmente para builds mais rápidos
-ENV UV_COMPILE_BYTECODE=1
-ENV UV_LINK_MODE=copy
-
-# Instalar dependências em modo otimizado
-RUN pip install --upgrade --no-cache-dir uv
-
-# Configurar memória (verificar se necessário para agentes)
-ENV OLLAMA_HOST=0.0.0.0
-ENV AGENT_ENV=production
-
-# Health check
-HEALTHCHECK --interval=30s --timeout=10s --start-period=40s --retries=3 \
-    CMD uvicorn openclaw_api:app --host 0.0.0.0 --port $PORT || exit 1
-
-# Entrypoint
-CMD ["uvicorn", "openclaw_api:app", "--host", "0.0.0.0", "--port", "$PORT"]
+**Raiz do problema em `openclaw.json`:**
+```json
+"defaults": {
+  "model": {
+    "primary": "ollama/kimi-k2.6:cloud",   // ← QUEBRADO: requer assinatura
+    "fallbacks": [
+      "ollama/kimi-k2.5:cloud",            // ← QUEBRADO: requer assinatura
+      "ollama/llama3.1:8b"                 // ← OK: modelo local
+    ]
+  }
+}
 ```
 
-**Impacto:**
-- Redução de ~70% no tamanho da imagem (de ~500MB para ~150MB)
-- Menor superfície de ataque (mínimas de dependências)
-- Melhor performance de cold start
+**Correção:**
+```json
+"defaults": {
+  "model": {
+    "primary": "ollama/qwen3.5:9b",
+    "fallbacks": [
+      "ollama/llama3.1:8b",
+      "groq/llama-3.3-70b-versatile"
+    ]
+  }
+}
+```
+
+**Correção do agente `main`:**
+```json
+{ "id": "main", "model": "ollama/qwen3.5:9b" }
+```
+
+**Impacto:** Elimina todos os erros 403 em produção. Bloqueia o uso do sistema atualmente.
 
 ---
 
-## 🎯 Melhoria 2: Otimização de Agentes
+### Problema 2: Path do Obsidian hardcoded no docker-compose
 
-### Agentes para Otimizar
-
-#### 1. **Atom** (Agente principal de coordenação)
-- Implementar cache de resultados de consultas
-- Adicionar rate limiting para evitar sobrecarga
-- Criar fila de mensagens assíncrona
-
-#### 2. **OpenClaw** (Agente central)
-- Otimizar prompts de sistema para reduzir tokens
-- Implementar circuit breaker para chamadas de API externas
-- Adicionar fallback automático
-
-#### 3. **Llama-70B** (Agente de análise)
-- Implementar quantização (GGUF, EXL2)
-- Configurar GPU sharing via vLLM
-- Adicionar layer caching
-
-#### 4. **Tutor English** e outros agentes
-- Implementar streaming para responses
-- Adicionar compressão de logs
-- Otimizar tamanho de contexto
-
----
-
-## 🎯 Melhoria 3: Sistema de Memória Estruturado
-
-### Estrutura Atual (Identificada)
-```
-data/.openclaw/workspace/memory/
-├── MEMORY.md
-├── 2026-02-12.md
-├── 2026-02-11.md
-└── ...
-```
-
-### Estrutura Otimizada
-
-#### Criar indexação automática:
-```markdown
-# MEMORY.md - Índice de Memória
-
-## 📂 Memória por Área
-
-### User/Perfil do Usuário
-- [user_profile.md](memory/user_profile.md) - Informações sobre o usuário
-- [preferences.md](memory/preferences.md) - Preferências configuradas
-
-### Project/Estrutura do Projeto
-- [project_ecosystem.md](memory/project_ecosystem.md) - Arquitetura do projeto
-- [architecture.md](memory/architecture.md) - Diagramas de arquitetura
-- [roadmap.md](memory/roadmap.md) - Roadmap de desenvolvimento
-
-### Feedback/Guidelines
-- [feedback.md](memory/feedback.md) - Correções e feedbacks do usuário
-- [standards.md](memory/standards.md) - Padrões de código
-
-### Technical/Técnico
-- [docker-optimizations.md](memory/docker-optimizations.md) - Otimizações Docker
-- [database.md](memory/database.md) - Configurações de banco de dados
-- [api-docs.md](memory/api-docs.md) - Documentação de API
-
-### Project/Estrutura do Projeto (Estruturado)
-- [project-structure.md](memory/project-structure.md) - Estrutura de arquivos do projeto
-- [components.md](memory/components.md) - Componentes principais
-```
-
-**Benefícios:**
-- Busca rápida por categoria
-- Indexação por metadados
-- Versionamento por data
-
----
-
-## 🎯 Melhoria 4: Observabilidade e Monitoring
-
-### Implementar Stack completo
-
-#### 1. Prometheus + Grafana
+**Diagnóstico:**
+O `docker-compose.yml` linha 73 monta o vault do Obsidian com path absoluto do Windows:
 ```yaml
-# Adicionar ao docker-compose.yml
+- E:/obsidian/OpenClaw:/home/openclaw/obsidian:rw
+```
+A variável `OBSIDIAN_VAULT_HOST=E:/obsidian/OpenClaw` **já existe no `.env`** mas não está sendo usada no compose. Isso impede que o projeto rode em qualquer outro ambiente.
+
+**Correção no `docker-compose.yml`:**
+```yaml
+- ${OBSIDIAN_VAULT_HOST}:/home/openclaw/obsidian:rw
+```
+
+**Impacto:** Portabilidade total. Qualquer pessoa clona e ajusta apenas o `.env`.
+
+---
+
+## 🎯 MELHORIAS P1 — ALTO (Fazer esta semana)
+
+### Melhoria 1: Consolidação dos Entrypoints
+
+**Situação atual (confusa):**
+```
+/
+├── entrypoint.sh        ← executa gosu + openclaw gateway (arquivo operacional)
+├── entrypoint.js        ← referenciado no Dockerfile? Confuso
+scripts/
+├── entrypoint.sh        ← cópia/versão alternativa
+├── entrypoint-backup.sh ← backup do entrypoint
+```
+
+O `Dockerfile` define `ENTRYPOINT ["npx", "openclaw"]` mas o `entrypoint.sh` da raiz faz o trabalho real via `gosu openclaw openclaw gateway`. Há conflito.
+
+**Ação:**
+- [ ] Definir `entrypoint.sh` da raiz como **fonte da verdade**
+- [ ] Remover `scripts/entrypoint.sh` e `scripts/entrypoint-backup.sh`
+- [ ] Atualizar `Dockerfile`: `ENTRYPOINT ["/entrypoint.sh"]` (se aplicável)
+- [ ] Documentar a decisão no `CLAUDE.md`
+
+---
+
+### Melhoria 2: Segmentação de Rede — IPs Fixos
+
+**Diagnóstico:**
+O `openclaw.json` hardcoda IPs na seção `controlUi.allowedOrigins`:
+```json
+"http://172.18.0.1",
+"http://172.18.0.1:18790",
+"http://100.67.139.80",
+```
+O `.env` comentado também contém:
+```env
+# OLLAMA_API_BASE=http://172.18.0.3:11434
+```
+Se a subnet do Docker mudar, o sistema pode parar de funcionar.
+
+**Ação:**
+- [ ] Substituir IPs fixos por referências DNS (`ollama`, `openclaw`) onde possível
+- [ ] Manter IPs apenas como fallback documentado, não como primário
+
+---
+
+## 🎯 MELHORIAS P2 — MÉDIO (Próxima sprint)
+
+### Melhoria 3: Observabilidade — Prometheus + Grafana
+
+**Status:** ✅ Não existe ainda. É a única melhoria completamente nova do plano original.
+
+O projeto já tem `scripts/monitor.sh` com `docker stats`, mas para observabilidade persistente e histórica faz sentido um stack completo.
+
+**Adicionar ao `docker-compose.yml`:**
+```yaml
 services:
   prometheus:
     image: prom/prometheus:latest
+    container_name: openclaw-prometheus
     ports:
       - "9090:9090"
     volumes:
       - prometheus_data:/prometheus
-      - ./prometheus.yml:/etc/prometheus/prometheus.yml
-    command:
-      - '--config.file=/etc/prometheus/prometheus.yml'
-      - '--storage.tsdb.path=/prometheus'
+      - ./config/prometheus.yml:/etc/prometheus/prometheus.yml:ro
+    networks:
+      - openclaw-net
+    restart: unless-stopped
 
   grafana:
     image: grafana/grafana:latest
+    container_name: openclaw-grafana
     ports:
       - "3001:3000"
     environment:
       - GF_SECURITY_ADMIN_USER=admin
-      - GF_SECURITY_ADMIN_PASSWORD=grafana
+      - GF_SECURITY_ADMIN_PASSWORD=${GRAFANA_PASSWORD:-admin}
     volumes:
       - grafana_data:/var/lib/grafana
-      - ./grafana/dashboards:/etc/grafana/provisioning/dashboards
+    networks:
+      - openclaw-net
     depends_on:
       - prometheus
+    restart: unless-stopped
 
 volumes:
   prometheus_data:
   grafana_data:
 ```
 
-#### 2. Health Check Endpoints
-```python
-# Em openclaw_api.py
-@app.get("/health")
-async def health_check():
-    return {
-        "status": "healthy",
-        "timestamp": datetime.now().isoformat(),
-        "uptime": process.cpu_times().user + process.cpu_times().system,
-        "memory": psutil.Process().memory_info().rss / 1024 ** 2
-    }
-
-@app.get("/agents/status")
-async def get_agent_status():
-    agents = get_all_agents()
-    return {
-        "agents": [
-            {
-                "id": agent.id,
-                "type": agent.__class__.__name__,
-                "status": "active",
-                "last_active": datetime.now().isoformat()
-            }
-            for agent in agents
-        ]
-    }
-
-@app.get("/logs")
-async def get_logs(request: Request):
-    level = request.query_params.get("level", "INFO")
-    lines = request.query_params.get("lines", "50")
-    return read_log_file(f"/logs/app.log", lines=int(lines), level=level)
-```
-
-#### 3. Logging Estruturado
-```python
-# Em main.py
-import logging
-import json
-from datetime import datetime
-
-def get_logger(name):
-    logger = logging.getLogger(name)
-    logger.setLevel(logging.INFO)
-    handler = logging.FileHandler("/logs/app.log")
-    formatter = logging.Formatter(
-        '{"timestamp": "%(asctime)s", "level": "%(levelname)s", "message": "%(message)s"}',
-        datefmt='%Y-%m-%dT%H:%M:%S'
-    )
-    handler.setFormatter(formatter)
-    logger.addHandler(handler)
-    return logger
-
-def json_logger(level, message):
-    logger.info(f"{level}: {message}", extra={'level': level})
-```
-
----
-
-## 🎯 Melhoria 5: Configuração de Ambiente (.env)
-
-### Arquivo .env Otimizado
-
+**Adicionar ao `.env`:**
 ```env
-# ================================
-# OpenClaw - Ambiente de Produção
-# ================================
-
-# ================================
-# Docker & Container
-# ================================
-# Container ID único para rastreamento
-CONTAINER_ID=4c91805617538e8f
-
-# Memória alocada para o container (16GB)
-CONTAINER_MEMORY=16G
-
-# ================================
-# Agentes & API
-# ================================
-# Portas dos agentes
-AGENT_PORT=5111
-AGENT_HOST=0.0.0.0
-
-# Portas de API
-AGENTS_API_PORT=5112
-AGENTS_API_HOST=0.0.0.0
-AGENTS_PORT=8000
-API_PORT=8001
-AGENTS_API_PORT=8002
-
-# URLs das APIs (Llama, Ollama, etc.)
-AGENTS_URLS_API_LLM_URLS=http://172.18.0.2:11434
-AGENTS_URLS_API_LLM_API_KEY=ollama
-
-# ================================
-# Observabilidade
-# ================================
-# Monitoramento e logs
 PROMETHEUS_PORT=9090
 GRAFANA_PORT=3001
-LOG_LEVEL=INFO
-
-# ================================
-# Volumes & Dados
-# ================================
-# Caminho dos volumes
-OBSIDIAN_VAULT_PATH=./vault
-OBSIDIAN_VAULT_PATH=/vault
-VAULT_PATH=/vault
-
-# ================================
-# Agentes
-# ================================
-AGENT_MODEL=llama3.2:3b
-AGENT_MODEL_2=llama3.1:8b
-AGENT_MODEL_3=llama3.2:1b
-
-# ================================
-# Observabilidade Engineer
-# ================================
-OBSIDIAN_VAULT_PATH=/vault
+GRAFANA_PASSWORD=troca-esta-senha
 ```
+
+**Métricas prioritárias:**
+- Uso de VRAM do Ollama (via `nvidia_smi_exporter`)
+- Latência das chamadas de modelo
+- Contagem de erros 4xx/5xx do gateway
+
+> ⚠️ **Para uso pessoal com RTX 4060 8GB:** Prometheus + Grafana consomem ~300MB de RAM adicionais. Avalie se o hardware comporta antes de ativar.
 
 ---
 
-## 🎯 Melhoria 6: Segurança
+### Melhoria 4: Estrutura de Memória do Agente
 
-### Checklist de Segurança
+**Situação:** O plugin `memory-wiki` já gerencia memória via Obsidian Vault. Qualquer reestruturação deve seguir as convenções do Obsidian, não reinventar.
 
-#### 1. Não-root
-- [x] Criar usuário `appuser`
-- [x] Definir permissões mínimas
+**Ação concreta (sem quebrar o que existe):**
+- [ ] Criar pasta `Knowledge/_index/` no vault para índices por categoria
+- [ ] Padronizar nomenclatura: `YYYY-MM-DD-tema.md` em vez de `YYYY-MM-DD.md`
+- [ ] Configurar `autoCompile: true` (já está) e verificar que o índice está sendo gerado
 
-#### 2. Secrets Management
+---
+
+## 📋 PLANO DE LIMPEZA — Consolidação
+
+> **O que o plano original propunha como "melhoria" mas já está feito.**
+> Objetivo: documentar o que existe e propor limpeza de redundâncias.
+
+---
+
+### 🧹 Item L1: Dockerfile Multi-stage (Já feito)
+
+**Estado atual:** O `Dockerfile` **já é multi-stage** com Node.js 20 Alpine:
+- Stage `builder`: `npm install -g openclaw`
+- Stage `runtime`: copia módulos, cria usuário `openclaw` (UID 1001), healthcheck HTTP, roda na porta `18790`
+
+**Limpeza proposta:**
+- [ ] Remover comentário desatualizado na linha 68: `# Node.js v22 (LTS)` → na verdade é v20
+- [ ] Verificar se `entrypoint.js` ainda é necessário ou pode ser removido (o `entrypoint.sh` faz o trabalho real)
+- [ ] Consolidar o `COPY . .` que aparece duas vezes no plano original (bug)
+
+---
+
+### 🧹 Item L2: Scripts de Operação (Já feito — mais completo)
+
+**Estado atual:** Os scripts existentes são **superiores** ao proposto no plano:
+```
+deploy.sh       (12KB) — com rollback, logs coloridos, healthcheck loop
+backup.sh               — na raiz com retenção de 7 dias
+scripts/
+├── backup.sh           — versão avançada em scripts/
+├── monitor.sh          — monitoramento via docker stats
+├── fix-all.sh          — reparação automática de problemas comuns
+├── fix-permissions.sh  — correção de permissões de volumes
+└── repair-openclaw.sh  — reparação do container openclaw
+```
+
+**Limpeza proposta:**
+- [ ] Auditar se `backup.sh` da raiz e `scripts/backup.sh` fazem a mesma coisa → consolidar em um só
+- [ ] Mover `deploy.sh` da raiz para `scripts/deploy.sh` para organização
+- [ ] Adicionar `scripts/` ao `Makefile` como alvos: `make backup`, `make deploy`, `make monitor`
+
+---
+
+### 🧹 Item L3: Segurança — Grupos e Permissões (Já feito)
+
+**Estado atual:** Já implementado no `docker-compose.yml`:
 ```yaml
-# Adicionar ao docker-compose.yml
-services:
-  agent-main:
-    # Não expor secrets no ambiente
-    environment:
-      - API_KEY=${AGENT_API_KEY}
-    # Usar secrets do Docker
-    secrets:
-      - api_key
-    # Mount secrets como arquivo
-    volumes:
-      - ./secrets:/run/secrets:ro
-
-secrets:
-  api_key:
-    file: ./secrets/api_key.txt
+deploy:
+  resources:
+    limits:
+      cpus: '4'
+      memory: 2G
+    reservations:
+      cpus: '2'
+      memory: 1G
 ```
+Usuário não-root `openclaw` (UID 1001) já no Dockerfile.
 
-#### 3. Network Segmentation
-```yaml
-networks:
-  agent_network:
-    driver: bridge
-    internal: true  # Network interna para agentes
-    ipam:
-      config:
-        - subnet: 172.28.0.0/16
-
-  api_network:
-    driver: bridge
-    external: true  # Network externa para API
-```
-
-#### 4. Health Check
-- [x] Adicionar health check ao Dockerfile
-- [ ] Implementar retry logic no client
-
-#### 5. Resource Limits
-```yaml
-services:
-  agent-main:
-    deploy:
-      resources:
-        limits:
-          cpus: '4'
-          memory: 8G
-        reservations:
-          cpus: '2'
-          memory: 4G
-```
+**Limpeza proposta:**
+- [ ] Remover `group_add: ["1000"]` do `docker-compose.yml` se não for necessário (potencial conflito com UID 1001 do container)
+- [ ] Documentar no `CLAUDE.md` por que `OPENCLAW_MEMORY_LIMIT` e `OPENCLAW_CPU_LIMIT` no `.env` existem mas não são usados no compose (vars definidas mas não referenciadas)
 
 ---
 
-## 🎯 Melhoria 7: Scripts de Operação
+### 🧹 Item L4: Arquivo .env (Já feito — mais organizado que o proposto)
 
-### scripts/
+**Estado atual:** O `.env` real já tem organização por seções com comentários explicativos.
 
-#### 1. deploy.sh
+**Limpeza proposta:**
+- [ ] Remover `# OPENCLAW_HOME=/home/openclaw/.config/openclaw` (comentário confuso)
+- [ ] Corrigir comentário na linha 58: `# Portas de RedeOLLAMA_API_BASE` → `# Portas de Rede`
+- [ ] Adicionar `GRAFANA_PASSWORD` para quando o P2 for implementado
+- [ ] **⚠️ ATENÇÃO:** O `.env` contém API keys em plaintext visíveis no repositório (Google AI, Groq, OpenRouter, Moonshot, NVAPI, Telegram). Se este repo for público ou compartilhado, **rotacionar todas as chaves imediatamente**.
+
+---
+
+## 📊 Priorização Final
+
+### P0 — Crítico (Fazer hoje)
+- [ ] Corrigir modelo primário no `openclaw.json` (erro 403 ativo)
+- [ ] Usar `${OBSIDIAN_VAULT_HOST}` no `docker-compose.yml`
+
+### P1 — Alto (Esta semana)
+- [ ] Consolidar entrypoints duplicados
+- [ ] Remover IPs hardcoded do `openclaw.json`
+- [ ] Limpeza L3: remover `group_add` desnecessário
+
+### P2 — Médio (Próxima sprint)
+- [ ] Implementar Prometheus + Grafana (verificar RAM disponível antes)
+- [ ] Consolidar scripts duplicados (`backup.sh`)
+- [ ] Estrutura de memória no Obsidian
+
+### P3 — Baixo (Backlog)
+- [ ] Documentação técnica completa em `docs/architecture/`
+- [ ] Testes de carga e benchmark de modelos
+- [ ] Limpeza de comentários obsoletos no Dockerfile e `.env`
+
+---
+
+## 📈 Métricas de Sucesso Reais
+
+### Estabilidade
+- [ ] Zero erros 403 nos logs do gateway
+- [ ] `docker-compose ps` mostrando todos os containers `healthy`
+- [ ] Ollama respondendo modelos locais em < 30s
+
+### Portabilidade
+- [ ] Projeto sobe com `docker-compose up -d` em outra máquina após ajustar apenas o `.env`
+- [ ] Nenhum path absoluto no `docker-compose.yml`
+
+### Observabilidade (após P2)
+- [ ] Dashboard Grafana com VRAM e latência
+- [ ] Alertas configurados para uso > 90% de VRAM
+
+---
+
+## 🚀 Próximos Passos Imediatos
+
 ```bash
-#!/bin/bash
-# Script de deploy com rollback automático
+# 1. Corrigir openclaw.json (P0)
+# Editar agents.defaults.model.primary para ollama/qwen3.5:9b
 
-set -e
+# 2. Corrigir docker-compose.yml (P0)
+# Linha 73: substituir E:/obsidian/OpenClaw por ${OBSIDIAN_VAULT_HOST}
 
-echo "🔧 Deploy do OpenClaw..."
+# 3. Reiniciar o container
+docker-compose restart openclaw
 
-# Backup da configuração atual
-if [ -f docker-compose.backup.$(date +%Y%m%d%H%M%S) ]; then
-    echo "⚠️  Backup anterior existente, não sobrescrevendo..."
-else
-    docker-compose down
-    docker-compose up -d
-fi
-
-# Monitoramento inicial
-echo "📊 Monitorando startup dos containers..."
-for i in {1..10}; do
-    if docker-compose ps | grep -q "Up"; then
-        echo "✅ Containers iniciados com sucesso"
-        break
-    fi
-    echo "⏳ Esperando containers... ($i/10)"
-    sleep 5
-done
+# 4. Verificar saúde
+docker-compose ps
+docker-compose logs openclaw --tail=50
 ```
-
-#### 2. backup.sh
-```bash
-#!/bin/bash
-# Script de backup
-
-set -e
-
-BACKUP_DIR="./backups"
-DATE=$(date +%Y%m%d_%H%M%S)
-
-mkdir -p $BACKUP_DIR
-
-# Backup de volumes
-echo "📦 Fazendo backup dos volumes..."
-tar -czf $BACKUP_DIR/volumes-$DATE.tar.gz \
-    -C . \
-    data/vault \
-    data/memory
-
-# Backup de configuração
-tar -czf $BACKUP_DIR/docker-$DATE.tar.gz \
-    docker-compose.yml \
-    .env
-
-# Manter apenas últimos 7 backups
-find $BACKUP_DIR -name "*.tar.gz" -mtime +7 -delete
-
-echo "✅ Backup criado: $BACKUP_DIR/volumes-$DATE.tar.gz"
-```
-
-#### 3. cleanup.sh
-```bash
-#!/bin/bash
-# Limpeza de recursos
-
-echo "🧹 Limpando recursos..."
-
-# Remover containers parados
-docker-compose rm -f -s $(docker-compose ps -q)
-
-# Limpar volumes não usados
-docker-compose prune
-
-# Limpar imagens não usadas
-docker image prune -af
-```
-
----
-
-## 🎯 Melhoria 8: Documentação Técnica
-
-### Estrutura da Documentação
-
-```
-docs/
-├── architecture/
-│   ├── docker/
-│   │   ├── docker-compose.md
-│   │   ├── Dockerfile.md
-│   │   └── volumes.md
-│   ├── agents/
-│   │   ├── atom.md
-│   │   ├── openclaw.md
-│   │   ├── llama-70b.md
-│   │   └── tutor-english.md
-│   └── deployment/
-│       ├── docker-compose.md
-│       └── docker.md
-├── api/
-│   ├── endpoints/
-│   │   ├── /agents.md
-│   │   ├── /chat.md
-│   │   └── /knowledge/
-│   └── responses/
-├── logs/
-│   ├── structure.md
-│   └── debugging.md
-└── troubleshooting/
-    ├── common-issues.md
-    └── performance.md
-```
-
----
-
-## 📊 Priorização
-
-### P0 - Crítico (Fazer imediata)
-- [ ] Otimizar Dockerfile (multistage)
-- [ ] Implementar health checks
-- [ ] Melhorar observabilidade (logs estruturados)
-- [ ] Criar scripts de operação
-
-### P1 - Alto (Fazer esta semana)
-- [ ] Implementar Prometheus + Grafana
-- [ ] Otimizar agentes (cache, streaming)
-- [ ] Melhorar .env e secrets
-- [ ] Criar documentação técnica
-
-### P2 - Médio (Fazer na próxima sprint)
-- [ ] Implementar circuit breakers
-- [ ] Otimizar prompts de sistema
-- [ ] Melhorar estrutura de memória
-- [ ] Criar scripts de backup
-
-### P3 - Baixo (Backlog)
-- [ ] Monitoramento avançado (OpenTelemetry)
-- [ ] Testes de carga
-- [ ] Benchmark de performance
-
----
-
-## 📈 Métricas de Sucesso
-
-### Performance
-- [ ] Tempo de resposta < 3s
-- [ ] Uptime > 99.9%
-- [ ] Cache hit rate > 80%
-
-### Segurança
-- [ ] Nenhuma vulnerabilidade crítica
-- [ ] Secrets não expostos
-- [ ] Network segmentation completa
-
-### Observabilidade
-- [ ] 100% de health checks passando
-- [ ] Logs estruturados em 100% das requisições
-- [ ] Métricas disponíveis no Prometheus
-
----
-
-## 🚀 Próximos Passos
-
-1. **I** Implementar P0 imediato
-2. **M** Monitorar impacto nas métricas
-3. **R** Refinar com feedback
-4. **I** Iterar sobre P1
-
-**Duração Estimada: 4-8 horas**
-
-**Dependências:**
-- Docker Desktop
-- Prometheus
-- Grafana
