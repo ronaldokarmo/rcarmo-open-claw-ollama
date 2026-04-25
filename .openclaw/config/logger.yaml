@@ -1,0 +1,47 @@
+# Configuração de logs estruturados para OpenClaw
+version: '2.0'
+
+logging:
+  format: json
+  level: INFO
+  output: file
+  rotation:
+    max_size_mb: 100
+    max_files: 10
+    compressor: gzip
+  fields:
+    - name: level
+      required: true
+    - name: timestamp
+      required: true
+    - name: service
+      required: true
+    - name: message
+      required: true
+    - name: request_id
+      required: false
+    - name: user_id
+      required: false
+    - name: error
+      required: false
+    - name: duration_ms
+      required: false
+
+api:
+  logs:
+    enabled: true
+    level: info
+    endpoint: /health
+
+agent:
+  logs:
+    enabled: true
+    level: warn
+    max_cache_entries: 10000
+    ttl_hours: 24
+
+performance:
+  metrics:
+    enabled: true
+    endpoint: /metrics
+    interval_seconds: 15

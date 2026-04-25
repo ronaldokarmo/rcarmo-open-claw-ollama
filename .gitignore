@@ -7,6 +7,7 @@ dist/
 
 # Data and Logs
 data/
+data/.openclaw/credentials
 logs/
 ollama_data/
 open_webui_data/

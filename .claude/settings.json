@@ -1,0 +1,39 @@
+{
+    "env": {
+        "ANTHROPIC_BASE_URL": "http://localhost:11434/v1",
+        "ANTHROPIC_AUTH_TOKEN": "ollama",
+        "ANTHROPIC_API_KEY": "ollama-local",
+        "ANTHROPIC_MODEL": "llama3.1:8b"
+    },
+    "permissions": {
+        "allow": [
+            "Bash(docker build *)",
+            "Bash(docker compose *)",
+            "Bash(ollama *)",
+            "Read(//tmp/**)",
+            "Read(//e/class-english/**)",
+            "Read(//e/openclaw-docker/.openclaw/**)",
+            "Read(//e/openclaw-docker/data/.openclaw**)",
+            "Read(//e/openclaw-docker/**)",
+            "Read(//e/obsidian/OpenClaw/**)"
+        ]
+    },
+    "allowManagedPermissionRulesOnly": true,
+    "enabledPlugins": {
+        "skill-creator@claude-plugins-official": true
+    },
+    "outputStyle": "assistant",
+    "language": "portuguese",
+    "feedbackSurveyRate": 0.05,
+    "effortLevel": "high",
+    "autoUpdatesChannel": "latest",
+    "voice": {
+        "mode": "hold",
+        "autoSubmit": true
+    },
+    "autoMemoryEnabled": true,
+    "autoMemoryDirectory": "~/.claude/projects/<project>/memory/",
+    "theme": "dark-daltonized",
+    "voiceEnabled": true,
+    "model": "llama3.1:8b"
+}
