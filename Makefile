@@ -1,52 +1,40 @@
-.PHONY: build run start stop logs clean purge test help
+.PHONY: up down logs monitor backup shell clean help
 
-# Variáveis
-IMAGE_NAME = openclaw
-CONTAINER_NAME = openclaw
-PORT_HOST = 18790
-PORT_CONTAINER = 18790
-
+# Default target
 help:
-	@echo "Comandos disponíveis:"
-	@echo "  make build    - Construir a imagem Docker"
-	@echo "  make run      - Executar container interativamente"
-	@echo "  make start    - Iniciar container em background"
-	@echo "  make stop     - Parar container"
-	@echo "  make logs     - Ver logs do container"
-	@echo "  make exec     - Acessar terminal do container"
-	@echo "  make clean    - Remover container"
-	@echo "  make purge    - Remover container e imagem"
-	@echo "  make test     - Testar conexão"
-	@echo "  make dashboard- Abrir dashboard no navegador"
+	@echo "OpenClaw Docker Management"
+	@echo ""
+	@echo "Available targets:"
+	@echo "  make up       - Start all services (docker-compose up -d)"
+	@echo "  make down     - Stop all services (docker-compose down)"
+	@echo "  make logs     - Show logs from all services"
+	@echo "  make monitor  - Run monitoring script"
+	@echo "  make backup   - Run backup script"
+	@echo "  make shell    - Access OpenClaw container shell"
+	@echo "  make clean    - Remove containers and volumes"
+	@echo "  make help     - Show this help"
 
-build:
-	docker build -t $(IMAGE_NAME) .
+up:
+	./deploy.sh
 
-run:
-	docker run -it --rm \
-		-p $(PORT_HOST):$(PORT_CONTAINER) \
-		--name $(CONTAINER_NAME) \
-		-v $(PWD)/data:/home/openclaw/.config/openclaw \
-		-v $(PWD)/logs:/logs \
-		-e GEMINI_API_KEY=$$GEMINI_API_KEY \
-		-e GEMINI_MODEL=gemini-2.5-flash \
-		$(IMAGE_NAME) bash
-
-start:
-	docker run -d \
-		-p $(PORT_HOST):$(PORT_CONTAINER) \
-		--name $(CONTAINER_NAME) \
-		--restart unless-stopped \
-		-v $(PWD)/data:/home/openclaw/.config/openclaw \
-		-v $(PWD)/logs:/logs \
-		-e GEMINI_API_KEY=$$GEMINI_API_KEY \
-		$(IMAGE_NAME)
-
-stop:
-	docker stop $(CONTAINER_NAME)
+down:
+	docker-compose down
 
 logs:
-	docker logs -f $(CONTAINER_NAME)
+	docker-compose logs -f
+
+monitor:
+	./scripts/monitor.sh
+
+backup:
+	./scripts/backup.sh
+
+shell:
+	docker-compose exec openclaw bash
+
+clean:
+	docker-compose down -v --remove-orphans
+	docker system prune -f
 
 exec:
 	docker exec -it $(CONTAINER_NAME) bash

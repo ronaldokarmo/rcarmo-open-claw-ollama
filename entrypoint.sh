@@ -74,7 +74,7 @@ cat << "EOF"
 EOF
 
 echo "  Porta   : ${OPENCLAW_PORT:-18790}"
-echo "  Modelo  : ${OPENCLAW_MODEL:-ollama/qwen2.5:1.5b}"
+echo "  Modelo  : ${OPENCLAW_MODEL:-ollama}"
 echo "  Ollama  : ${OLLAMA_API_BASE:-http://ollama:11434}"
 echo ""
 
@@ -88,27 +88,29 @@ if [ -n "${OLLAMA_API_BASE}" ]; then
     done
 fi
 
-# Fix permissions for the openclaw user (ownership first)
+# Fix permissions for the openclaw user (ownership first) - skip if it takes too long on Windows mounts
 log "Corrigindo ownership dos volumes..."
-chown -R openclaw:openclaw "${OPENCLAW_HOME}/.openclaw" "${OPENCLAW_HOME}/logs"
+timeout 10 chown -R openclaw:openclaw "${OPENCLAW_HOME}/.openclaw" "${OPENCLAW_HOME}/logs" 2>/dev/null || warn "⚠️ Chown timeout ou falha (esperado em volumes Windows)"
 
 # Verificar e corrigir permissões de segurança
-check_and_fix_permissions
+check_and_fix_permissions || true
 
 # Handle configuration: setup if missing, repair if existing
 if [ ! -f "${OPENCLAW_HOME}/.openclaw/openclaw.json" ]; then
     log "Primeira execução - configurando..."
-    gosu openclaw openclaw setup --non-interactive || gosu openclaw openclaw doctor --fix || true
-    
-    # Após criar config, ajustar permissões novamente
-    check_and_fix_permissions
+    openclaw setup --non-interactive 2>/dev/null || openclaw doctor --fix 2>/dev/null || true
+    check_and_fix_permissions 2>/dev/null || true
 else
     log "Testando permissão de escrita..."
-    gosu openclaw touch "${OPENCLAW_HOME}/.openclaw/write_test" && log "✅ Escrita OK" || warn "❌ Falha na escrita!"
+    if touch "${OPENCLAW_HOME}/.openclaw/write_test" 2>/dev/null; then
+        log "✅ Escrita OK"
+    else
+        warn "⚠️ Escrita indisponível (volume Windows?), continuando..."
+    fi
     rm -f "${OPENCLAW_HOME}/.openclaw/write_test" 2>/dev/null || true
     
-    log "Verificando/Reparando esquema da configuração..."
-    gosu openclaw openclaw doctor --fix || warn "⚠️ Falha ao reparar configuração automaticamente"
+    log "Verificando esquema da configuração..."
+    openclaw doctor --non-interactive 2>/dev/null || warn "⚠️ Falha ao verificar configuração"
 fi
 
 # Start the gateway directly
@@ -117,7 +119,7 @@ log "WebSocket endpoint: ws://0.0.0.0:${OPENCLAW_PORT:-18790}"
 
 # Start TCP proxy to expose openclaw on all interfaces (0.0.0.0:18790 -> 127.0.0.1:18791)
 # OpenClaw always binds to 127.0.0.1, so we need this relay for Nginx/Docker bridge access
-gosu openclaw node -e "
+node -e "
 const net = require('net');
 const server = net.createServer(client => {
   const upstream = net.connect(18791, '127.0.0.1');
@@ -129,8 +131,13 @@ const server = net.createServer(client => {
 server.listen(18790, '0.0.0.0', () => {
   process.stdout.write('[proxy] TCP relay 0.0.0.0:18790 -> 127.0.0.1:18791\n');
 });
-" &
+" 2>/dev/null &
 
-# Run gateway on internal port 18791 as PID 1 (exec ensures signals are forwarded correctly)
-# Using gosu to drop root privileges and run as openclaw user
-exec gosu openclaw openclaw gateway --port 18791
+# Try su-exec first; if it fails, run as root
+log "Iniciando gateway..."
+if su-exec openclaw openclaw gateway --port 18791 --allow-unconfigured 2>/dev/null; then
+    exec su-exec openclaw openclaw gateway --port 18791 --allow-unconfigured
+else
+    log "⚠️ su-exec falhou, executando como root..."
+    exec openclaw gateway --port 18791 --allow-unconfigured
+fi

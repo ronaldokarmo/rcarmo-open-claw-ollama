@@ -26,14 +26,10 @@ OpenClaw é um **Multiagent System** Dockerizado para **Test Engineers** que bus
 │  │  ┌────────────────────────────────────────────┐ │  │
 │  │  │       Rede de Agentes (Multiagents)       │ │  │
 │  │  │                                           │ │  │
-│  │  │  • Atom (Roteador)                        │ │  │
-│  │  │  • OpenClaw (Códigos)                     │ │  │
-│  │  │  • Llama-70B (Chat)                       │ │  │
-│  │  │  • Tutor English                          │ │  │
-│  │  │  • Prompt Architect                        │ │  │
-│  │  │  • Hardware IoT Engineer                   │ │  │
-│  │  │  • Observability Engineer                  │ │  │
-│  │  │  • Security Analyst                        │ │  │
+│  │  │  • Main (Roteador Geral)                  │ │  │
+│  │  │  • Tutor English (Aulas de Inglês)        │ │  │
+│  │  │  • Tutor IoT (Hardware e IoT)             │ │  │
+│  │  │  • Prompt Engineer (Otimização de Prompts)│ │  │
 │  │  └────────────────────────────────────────────┘ │  │
 │  │                                                 │  │
 │  │  🧠 Memory-Wiki (memory-wiki.md)                 │  │
@@ -49,7 +45,7 @@ OpenClaw é um **Multiagent System** Dockerizado para **Test Engineers** que bus
          │
          ▼
   ┌────────────────────────────────────────────────────┐
-│           E:\obsidian\ai-data (Volume Mount)         │
+│           E:\obsidian\OpenClaw (Volume Mount)         │
 │  ┌─────────────────────────────────────────────────┐ │
 │  │  - Knowledge/ (Documentação)                     │ │
 │  │  - Memory/ (Logs e Memórias)                     │ │
@@ -79,7 +75,7 @@ OpenClaw é um **Multiagent System** Dockerizado para **Test Engineers** que bus
 ### Host Windows
 
 ```
-E:\obsidian\ai-data\
+E:\obsidian\OpenClaw\
 ├── Knowledge/
 │   ├── Obsidian/              # Documentação do Obsidian
 │   ├── Idiomas/
@@ -260,13 +256,13 @@ Contém reflexões sobre evolução da IA, insights técnicos e aprendizados acu
 ### openclaw-vault
 
 - **Mount:** `openclaw-vault:/app/data/vault`
-- **Host Path:** `E:\obsidian\ai-data\`
+- **Host Path:** `E:\obsidian\OpenClaw\`
 - **Conteúdo:** Second Brain completo
 
 ### openclaw-logs
 
 - **Mount:** `openclaw-logs:/app/openclaw/logs`
-- **Host Path:** `E:\obsidian\ai-data\Memory\`
+- **Host Path:** `E:\obsidian\OpenClaw\Memory\`
 - **Conteúdo:** Logs rotacionados
 
 ---

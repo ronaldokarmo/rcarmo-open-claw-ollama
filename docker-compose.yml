@@ -30,6 +30,9 @@ services:
       - MOONSHOT_API_KEY=${MOONSHOT_API_KEY}
       # Ollama (LLM local)
       - OLLAMA_API_BASE=${OLLAMA_API_BASE:-http://ollama:11434}
+      - OLLAMA_BASE_URL=${OLLAMA_API_BASE:-http://ollama:11434}
+      - OLLAMA_HOST=${OLLAMA_API_BASE:-http://ollama:11434}
+      - OLLAMA_URL=${OLLAMA_API_BASE:-http://ollama:11434}
       - OLLAMA_API_KEY=${OLLAMA_API_KEY:-ollama-local}
       # Configurações do OpenClaw
       - OPENCLAW_HOME=/home/openclaw
@@ -66,11 +69,15 @@ services:
     volumes:
       # Persistência de dados
       - ./data/.openclaw:/home/openclaw/.openclaw
+      # Sobreposição do diretório de deps com um volume nativo Docker para evitar erros de EPERM no Windows
+      - openclaw_plugin_deps:/home/openclaw/.openclaw/plugin-runtime-deps
       - ./logs:/home/openclaw/logs
+      # Permite aos agents interagirem com o Docker local
+      - /var/run/docker.sock:/var/run/docker.sock
       # Ollama (se usar localmente)
       # - ./ollama_data:/root/.ollama:ro
-      # Obsidian Vault (leitura/escrita) - Usando diretório existente do usuário
-      - E:/obsidian/OpenClaw:/home/openclaw/obsidian:rw
+      # Obsidian Vault (leitura/escrita) - Caminho configurado via .env (OBSIDIAN_VAULT_HOST)
+      - ${OBSIDIAN_VAULT_HOST}:/home/openclaw/obsidian:rw
     group_add:
       - "1000"
     deploy:
@@ -82,7 +89,7 @@ services:
           cpus: '2'
           memory: 1G
     healthcheck:
-      test: ["CMD", "curl", "-sf", "http://localhost:18790/health"]
+      test: [ "CMD", "netstat", "-tln", "|", "grep", ":18790" ]
       interval: 30s
       timeout: 10s
       retries: 3
@@ -104,7 +111,7 @@ services:
     depends_on:
       - openclaw
     healthcheck:
-      test: ["CMD", "wget", "--quiet", "--tries=1", "--spider", "http://localhost/"]
+      test: [ "CMD", "wget", "--quiet", "--tries=1", "--spider", "http://localhost/" ]
       interval: 30s
       timeout: 10s
       retries: 3
@@ -131,31 +138,27 @@ services:
       - OLLAMA_MAX_LOADED_MODELS=1
       - OLLAMA_MAX_QUEUE=5
       - OLLAMA_KEEP_ALIVE=5m
-      - NVIDIA_VISIBLE_DEVICES=all
-      - NVIDIA_DRIVER_CAPABILITIES=compute,utility
     volumes:
       - ./ollama_data:/root/.ollama
     networks:
       - openclaw-net
     deploy:
       resources:
-        reservations:
-          devices:
-            - driver: nvidia
-              count: 1
-              capabilities: [gpu]
-          memory: 10G
         limits:
           memory: 10G
+        reservations:
+          memory: 4G
     healthcheck:
-      test: ["CMD", "ollama", "list"]
+      test: [ "CMD", "ollama", "list" ]
       interval: 30s
       timeout: 10s
       retries: 5
-      start_period: 300s
+      start_period: 60s
 
   hermes:
-    image: ubuntu:24.04
+    build:
+      context: .
+      dockerfile: Dockerfile.hermes
     container_name: hermes
     restart: unless-stopped
     networks:
@@ -166,15 +169,46 @@ services:
     environment:
       - TZ=America/Sao_Paulo
       - OLLAMA_BASE_URL=http://ollama:11434/v1
+      - DEBIAN_FRONTEND=noninteractive
     volumes:
-      - ./hermes_data:/root/.hermes
+      - ./hermes_data:/root/.hermes:delegated
     command: >
-      bash -lc "
-      apt-get update &&
-      apt-get install -y curl bash ca-certificates &&
-      curl -fsSL https://raw.githubusercontent.com/NousResearch/hermes-agent/main/scripts/install.sh | bash &&
       tail -f /dev/null
-      "
+
+  prometheus:
+    image: prom/prometheus:latest
+    container_name: openclaw-prometheus
+    restart: unless-stopped
+    ports:
+      - "9090:9090"
+    volumes:
+      - prometheus_data:/prometheus
+      - ./config/prometheus.yml:/etc/prometheus/prometheus.yml:ro
+    networks:
+      - openclaw-net
+    command:
+      - '--config.file=/etc/prometheus/prometheus.yml'
+      - '--storage.tsdb.path=/prometheus'
+      - '--web.console.libraries=/etc/prometheus/console_libraries'
+      - '--web.console.templates=/etc/prometheus/consoles'
+      - '--storage.tsdb.retention.time=200h'
+      - '--web.enable-lifecycle'
+
+  grafana:
+    image: grafana/grafana:latest
+    container_name: openclaw-grafana
+    restart: unless-stopped
+    ports:
+      - "3001:3000"
+    environment:
+      - GF_SECURITY_ADMIN_USER=admin
+      - GF_SECURITY_ADMIN_PASSWORD=${GRAFANA_PASSWORD:-changemeplease}
+    volumes:
+      - grafana_data:/var/lib/grafana
+    networks:
+      - openclaw-net
+    depends_on:
+      - prometheus
 
 networks:
   openclaw-net:
@@ -186,16 +220,6 @@ networks:
 volumes:
   ollama_data:
   obsidian_data:
-
-# ──────────────────────────────────────────────────────────────
-# Metadados
-# ──────────────────────────────────────────────────────────────
-# Otimizações:
-# - Multi-stage build reduz ~70% no tamanho da imagem
-# - Limitação de memória agressiva (1GB reserva, 2GB limite)
-# - Usuário não-root (UID 1000)
-# - Network isolation (separação de serviços)
-# - DNS IPv4 first para latência reduzida
-# - Healthchecks otimizados
-# - Recursos com reservations e limits
-# ──────────────────────────────────────────────────────────────
+  prometheus_data:
+  grafana_data:
+  openclaw_plugin_deps:

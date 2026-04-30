@@ -11,16 +11,16 @@ O projeto OpenClaw é uma plataforma de rede de agentes LLM baseada em **Node.js
 
 - `openclaw` container (Node.js 20 Alpine, multi-stage)
 - `ollama` container (GPU NVIDIA RTX 4060, 8GB VRAM)
-- `nginx` container (proxy reverso)
-- `hermes` container (agente auxiliar)
-- Plugin `memory-wiki` integrado com Obsidian Vault
-- Agentes ativos: `main`, `tutor-english`, `tutor-iot`, `prompt-engineer`
+- `nginx` container (proxy reverso — **sem configuração ativa**)
+- `hermes` container (agente auxiliar — **instalação via curl em runtime, sem imagem própria**)
+- Plugin `memory-wiki` integrado com Obsidian Vault (`E:/obsidian/OpenClaw`)
+- Agentes ativos em `openclaw.json`: `main`, `tutor-english`, `tutor-iot`, `prompt-engineer`
 
 ---
 
 ## 🚨 MELHORIAS P0 — CRÍTICO (Problemas Ativos)
 
-### Problema 1: Modelos Cloud causando erro 403
+### P0-1: Modelos Cloud causando erro 403
 
 **Diagnóstico:**
 O `openclaw.json` define como modelo primário `ollama/kimi-k2.6:cloud` com fallback para `ollama/kimi-k2.5:cloud`. Esses modelos estão registrados sob o provider `ollama` mas são serviços de nuvem que **requerem assinatura paga** — causando erro `403: this model requires a subscription` em produção.
@@ -60,7 +60,7 @@ O `openclaw.json` define como modelo primário `ollama/kimi-k2.6:cloud` com fall
 
 ---
 
-### Problema 2: Path do Obsidian hardcoded no docker-compose
+### P0-2: Path do Obsidian hardcoded no docker-compose
 
 **Diagnóstico:**
 O `docker-compose.yml` linha 73 monta o vault do Obsidian com path absoluto do Windows:
@@ -74,35 +74,175 @@ A variável `OBSIDIAN_VAULT_HOST=E:/obsidian/OpenClaw` **já existe no `.env`** 
 - ${OBSIDIAN_VAULT_HOST}:/home/openclaw/obsidian:rw
 ```
 
-**Impacto:** Portabilidade total. Qualquer pessoa clona e ajusta apenas o `.env`.
+**Impacto:** Portabilidade. Qualquer pessoa clona e configura apenas o `.env`.
 
 ---
 
-## 🎯 MELHORIAS P1 — ALTO (Fazer esta semana)
+### P0-3: Nginx sem configuração — Proxy inativo
 
-### Melhoria 1: Consolidação dos Entrypoints
+**Diagnóstico:**
+O container `nginx` está no `docker-compose.yml` expondo as portas 80 e 443, mas:
+- `nginx/conf.d/` está **completamente vazia** (nenhum arquivo `.conf`)
+- `nginx/ssl/` sem certificados
+- O Nginx roda com configuração padrão, **sem rotear nada para o OpenClaw** na porta 18790
+
+Isso significa que **nginx não está fazendo proxy reverso** — o acesso externo vai direto na porta 18790, sem CORS, sem HTTPS, sem rate limiting.
+
+**Ação:**
+- [ ] Criar `nginx/conf.d/openclaw.conf` com upstream para `openclaw:18790`
+- [ ] Configurar HTTPS com certificado auto-assinado (`nginx/ssl/`)
+- [ ] Ou desativar o nginx no compose se não for usado
+
+**Exemplo de configuração mínima:**
+```nginx
+upstream openclaw_upstream {
+    server openclaw:18790;
+}
+
+server {
+    listen 80;
+    server_name _;
+
+    location / {
+        proxy_pass http://openclaw_upstream;
+        proxy_http_version 1.1;
+        proxy_set_header Upgrade $http_upgrade;
+        proxy_set_header Connection "upgrade";
+        proxy_set_header Host $host;
+        proxy_set_header X-Real-IP $remote_addr;
+    }
+}
+```
+
+---
+
+### P0-4: Agente `prompt-engineer` com modelo inexistente
+
+**Diagnóstico:**
+O `openclaw.json` define o agente `prompt-engineer` com:
+```json
+{ "id": "prompt-engineer", "name": "Prompt Architect", "model": "ollama/llama3.3:3b" }
+```
+O modelo `llama3.3:3b` **não existe** no Ollama — a versão correta é `llama3.2:3b`. Esse agente falhará a cada chamada.
+
+**Correção:**
+```json
+{ "id": "prompt-engineer", "name": "Prompt Architect", "model": "ollama/llama3.2:3b" }
+```
+
+---
+
+## 🎯 MELHORIAS P1 — ALTO (Esta semana)
+
+### P1-1: Hermes — Container Frágil (instalação em runtime)
+
+**Diagnóstico:**
+O container `hermes` no `docker-compose.yml` usa `ubuntu:24.04` e instala tudo via `apt-get` + `curl` **em runtime**:
+```yaml
+command: >
+  bash -lc "
+  apt-get update &&
+  apt-get install -y curl bash ca-certificates &&
+  curl -fsSL https://raw.githubusercontent.com/NousResearch/hermes-agent/main/scripts/install.sh | bash &&
+  tail -f /dev/null
+  "
+```
+
+**Problemas:**
+1. Instala dependências a cada `docker-compose up` — lento (~2-5 min) e requer internet
+2. O `install.sh` remoto pode mudar a qualquer momento (não é fixo/pinado)
+3. `tail -f /dev/null` é um anti-pattern — sem processo principal, sem PID 1 correto
+4. Container depende de `ollama: service_healthy` mas não tem healthcheck próprio
+
+**Ação:**
+- [ ] Criar um `Dockerfile.hermes` próprio com a instalação no build
+- [ ] Ou avaliar se o Hermes é realmente necessário e remover se não estiver em uso
+
+---
+
+### P1-2: API Keys em Plaintext no `.env` versionado
+
+**Diagnóstico crítico de segurança:**
+O arquivo `.env` contém API keys reais em texto puro:
+```env
+GOOGLE_AI_KEY=AIzaSyD...
+GROQ_API_KEY=gsk_UDgw...
+OPENROUTER_API_KEY=sk-or-v1...
+MOONSHOT_API_KEY=sk-0H9E...
+NVAPI_API_KEY=nvapi-ch_...
+TELEGRAM_BOT_TOKEN=8563126768:AAG...
+OPENCLAW_GATEWAY_TOKEN=openclaw-dev-my-personal-assistant
+OPENCLAW_GATEWAY_PASSWORD=red@1207
+```
+
+O `.gitignore` **exclui o `.env`** corretamente, mas o risco permanece em:
+- Compartilhamento manual do repositório/pasta
+- Backup automático do Windows incluindo o diretório
+- Logs que possam espelhar variáveis de ambiente
+
+**Ação imediata:**
+- [ ] **Rotacionar todas as API keys** listadas acima (elas foram expostas em sessões de análise)
+- [ ] Adicionar `.env.example` com valores placeholder para documentar o que é esperado
+- [ ] Avaliar uso de **Docker Secrets** para credenciais críticas (Telegram token, Gateway password)
+
+---
+
+### P1-3: Consolidação dos Entrypoints Duplicados
 
 **Situação atual (confusa):**
 ```
 /
-├── entrypoint.sh        ← executa gosu + openclaw gateway (arquivo operacional)
-├── entrypoint.js        ← referenciado no Dockerfile? Confuso
+├── entrypoint.sh        ← executa gosu + openclaw gateway (arquivo operacional real)
+├── entrypoint.js        ← referenciado no package.json como "main" — não usado pelo Docker
 scripts/
-├── entrypoint.sh        ← cópia/versão alternativa
-├── entrypoint-backup.sh ← backup do entrypoint
+├── entrypoint.sh        ← versão alternativa/de backup
+├── entrypoint-backup.sh ← backup explícito do entrypoint
 ```
 
-O `Dockerfile` define `ENTRYPOINT ["npx", "openclaw"]` mas o `entrypoint.sh` da raiz faz o trabalho real via `gosu openclaw openclaw gateway`. Há conflito.
+O `Dockerfile` define `ENTRYPOINT ["npx", "openclaw"]` mas o `entrypoint.sh` da raiz (copiado via `COPY . .`) faz o trabalho real via `gosu openclaw openclaw gateway`. Há conflito entre o que o Dockerfile declara e o que realmente executa.
 
 **Ação:**
 - [ ] Definir `entrypoint.sh` da raiz como **fonte da verdade**
 - [ ] Remover `scripts/entrypoint.sh` e `scripts/entrypoint-backup.sh`
-- [ ] Atualizar `Dockerfile`: `ENTRYPOINT ["/entrypoint.sh"]` (se aplicável)
+- [ ] Atualizar `Dockerfile`: `ENTRYPOINT ["/entrypoint.sh"]`
 - [ ] Documentar a decisão no `CLAUDE.md`
 
 ---
 
-### Melhoria 2: Segmentação de Rede — IPs Fixos
+### P1-4: Makefile Desatualizado e Inconsistente
+
+**Diagnóstico:**
+O `Makefile` atual foi escrito para uma versão antiga do projeto e está quebrado:
+```makefile
+run:
+    docker run -it --rm \
+        -v $(PWD)/data:/home/openclaw/.config/openclaw \  # ← Path errado (config não é .config)
+        -e GEMINI_API_KEY=$$GEMINI_API_KEY \              # ← Gemini não está no .env atual
+        -e GEMINI_MODEL=gemini-2.5-flash \                # ← Modelo não configurado
+```
+- Ignora o `docker-compose.yml` — gerencia o container de forma isolada
+- O target `dashboard` usa `open` (macOS) sem fallback adequado para Windows
+- Não tem target para `monitor`, `backup`, `logs-follow`, `shell`
+
+**Ação:**
+- [ ] Reescrever o `Makefile` para ser um alias conveniente do `deploy.sh` e scripts existentes
+- [ ] Adicionar targets: `make up`, `make down`, `make logs`, `make monitor`, `make backup`, `make shell`
+- [ ] Remover referências a `GEMINI_API_KEY` (não está no projeto)
+
+---
+
+### P1-5: `config/custom-config.yaml` Vazio
+
+**Diagnóstico:**
+O arquivo `config/custom-config.yaml` existe mas está **completamente vazio** (0 bytes além de newline). O `docker-compose.yml` **não monta** este arquivo no container. Indica funcionalidade planejada mas não implementada.
+
+**Ação:**
+- [ ] Documentar para que serve o `custom-config.yaml` (adicionar comentário/README no diretório)
+- [ ] Ou remover o arquivo e o diretório `config/` se não houver plano de uso
+
+---
+
+### P1-6: IPs Fixos no `openclaw.json`
 
 **Diagnóstico:**
 O `openclaw.json` hardcoda IPs na seção `controlUi.allowedOrigins`:
@@ -110,26 +250,23 @@ O `openclaw.json` hardcoda IPs na seção `controlUi.allowedOrigins`:
 "http://172.18.0.1",
 "http://172.18.0.1:18790",
 "http://100.67.139.80",
+"http://100.67.139.80:18790"
 ```
-O `.env` comentado também contém:
-```env
-# OLLAMA_API_BASE=http://172.18.0.3:11434
-```
-Se a subnet do Docker mudar, o sistema pode parar de funcionar.
+Se a subnet do Docker mudar ou o IP da máquina mudar, o WebUI pode parar de funcionar.
 
 **Ação:**
-- [ ] Substituir IPs fixos por referências DNS (`ollama`, `openclaw`) onde possível
-- [ ] Manter IPs apenas como fallback documentado, não como primário
+- [ ] Substituir IPs fixos por wildcard `"*"` (já existe no final da lista) ou por variável de ambiente
+- [ ] Documentar os IPs que são fixos por design (VPN, Tailscale)
 
 ---
 
 ## 🎯 MELHORIAS P2 — MÉDIO (Próxima sprint)
 
-### Melhoria 3: Observabilidade — Prometheus + Grafana
+### P2-1: Observabilidade — Prometheus + Grafana
 
-**Status:** ✅ Não existe ainda. É a única melhoria completamente nova do plano original.
+**Status:** Não existe ainda. É a melhoria com maior valor real a médio prazo.
 
-O projeto já tem `scripts/monitor.sh` com `docker stats`, mas para observabilidade persistente e histórica faz sentido um stack completo.
+O projeto já tem `scripts/monitor.sh` com `docker stats`, mas para histórico e alertas automáticos faz sentido um stack completo.
 
 **Adicionar ao `docker-compose.yml`:**
 ```yaml
@@ -153,7 +290,7 @@ services:
       - "3001:3000"
     environment:
       - GF_SECURITY_ADMIN_USER=admin
-      - GF_SECURITY_ADMIN_PASSWORD=${GRAFANA_PASSWORD:-admin}
+      - GF_SECURITY_ADMIN_PASSWORD=${GRAFANA_PASSWORD:-changemeplease}
     volumes:
       - grafana_data:/var/lib/grafana
     networks:
@@ -169,125 +306,229 @@ volumes:
 
 **Adicionar ao `.env`:**
 ```env
-PROMETHEUS_PORT=9090
-GRAFANA_PORT=3001
 GRAFANA_PASSWORD=troca-esta-senha
 ```
 
-**Métricas prioritárias:**
-- Uso de VRAM do Ollama (via `nvidia_smi_exporter`)
+**Métricas prioritárias para o Ollama (NVIDIA):**
+- Uso de VRAM (`nvidia-smi` via `nvidia_gpu_exporter`)
 - Latência das chamadas de modelo
 - Contagem de erros 4xx/5xx do gateway
 
-> ⚠️ **Para uso pessoal com RTX 4060 8GB:** Prometheus + Grafana consomem ~300MB de RAM adicionais. Avalie se o hardware comporta antes de ativar.
+> ⚠️ **Aviso de recursos:** Prometheus + Grafana consomem ~300MB de RAM adicionais. Verifique disponibilidade antes de ativar em ambiente com RTX 4060 8GB.
 
 ---
 
-### Melhoria 4: Estrutura de Memória do Agente
+### P2-2: Documentação Desatualizada
 
-**Situação:** O plugin `memory-wiki` já gerencia memória via Obsidian Vault. Qualquer reestruturação deve seguir as convenções do Obsidian, não reinventar.
+**Diagnóstico:**
+O `CLAUDE.md` (documentação principal) descreve uma arquitetura com **agentes que não existem**:
+- Menciona "Atom (Roteador)", "OpenClaw (Códigos)", "Llama-70B (Chat)" como agentes — mas esses não estão em `openclaw.json`
+- Lista agentes: "Observability Engineer", "Security Analyst", "Hardware IoT Engineer" — não configurados
+- Paths de volume desatualizados: menciona `E:\\obsidian\\ai-data` mas o mount real é `E:/obsidian/OpenClaw`
+- O `docs/STATUS-PRODUCAO.md` lista scripts como ativos (`monitor-api.sh`, `cleanup.sh`) que **não existem** no repositório
+
+**Ação:**
+- [ ] Atualizar `CLAUDE.md` para refletir os agentes reais: `main`, `tutor-english`, `tutor-iot`, `prompt-engineer`
+- [ ] Atualizar paths do Obsidian Vault
+- [ ] Sincronizar `docs/STATUS-PRODUCAO.md` com a realidade dos scripts (remover scripts fantasmas)
+- [ ] Criar `docs/architecture/README.md` com diagrama atualizado
+
+---
+
+### P2-3: `docker-compose copy.yml` — Arquivo Duplicate na Raiz
+
+**Diagnóstico:**
+Existe um `docker-compose copy.yml` (com espaço no nome) na raiz do projeto, que é uma cópia antiga do `docker-compose.yml`. Arquivo com espaço no nome causa problemas em scripts bash.
+
+**Ação:**
+- [ ] Verificar se há diff relevante entre os dois arquivos
+- [ ] Remover `docker-compose copy.yml` (o original tem precedência)
+
+---
+
+### P2-4: `data/config-schema.json` — Arquivo de 2MB
+
+**Diagnóstico:**
+O arquivo `data/config-schema.json` tem **2.1MB** — incomum para um schema. Pode ser um artefato gerado automaticamente pelo `openclaw doctor` que não deveria estar no controle versão (ou não deveria crescer indefinidamente).
+
+**Ação:**
+- [ ] Verificar se este arquivo é gerado automaticamente
+- [ ] Se for gerado, adicionar ao `.gitignore`
+- [ ] Se for necessário como seed, mantê-lo mas avaliar se 2MB é o tamanho esperado
+
+---
+
+### P2-5: Sistema de Memória — Convenções Obsidian
+
+**Situação:** O plugin `memory-wiki` já gerencia memória via Obsidian Vault. Qualquer reestruturação deve seguir as convenções do Obsidian — não reinventar estrutura própria.
 
 **Ação concreta (sem quebrar o que existe):**
-- [ ] Criar pasta `Knowledge/_index/` no vault para índices por categoria
-- [ ] Padronizar nomenclatura: `YYYY-MM-DD-tema.md` em vez de `YYYY-MM-DD.md`
-- [ ] Configurar `autoCompile: true` (já está) e verificar que o índice está sendo gerado
+- [ ] Criar `_index/` no vault com índices por categoria (`tutor-english/`, `tutor-iot/`, `main/`)
+- [ ] Padronizar nomenclatura: `YYYY-MM-DD-tema.md` para logs diários
+- [ ] Verificar que `autoCompile: true` está gerando o índice corretamente
+- [ ] Criar um daily note template no Obsidian alinhado com o que o agente escreve
+
+---
+
+## 🎯 MELHORIAS P3 — BAIXO (Backlog)
+
+### P3-1: CI/CD Básico com GitHub Actions
+
+**O projeto tem `deploy.sh` completo** — falta apenas conectá-lo a um pipeline:
+```yaml
+# .github/workflows/validate.yml
+on: [push]
+jobs:
+  validate:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Validate docker-compose
+        run: docker-compose config --quiet
+      - name: Lint shell scripts
+        run: shellcheck entrypoint.sh scripts/*.sh
+```
+
+---
+
+### P3-2: Adicionar `.env.example` ao Repositório
+
+O `.env` real está no `.gitignore` (correto), mas não há `.env.example` para documentar quais variáveis são necessárias. Qualquer clone do projeto fica sem orientação.
+
+**Ação:**
+- [ ] Criar `.env.example` com variáveis sem valores reais
+- [ ] Adicionar comentários explicativos em cada seção
+- [ ] Referenciá-lo no `README.md`
+
+---
+
+### P3-3: Ollama — Listar e Versionar Modelos em Uso
+
+**Diagnóstico:**
+Os modelos usados (`qwen3.5:9b`, `llama3.1:8b`) não estão documentados nem há script de bootstrap para baixá-los automaticamente em um ambiente novo.
+
+**Ação:**
+- [ ] Criar `scripts/pull-models.sh` que faz pull dos modelos necessários
+- [ ] Documentar no `README.md` quais modelos são necessários e como baixar
+- [ ] Exemplo:
+```bash
+#!/bin/bash
+# Pull de todos os modelos necessários para o ambiente
+ollama pull qwen3.5:9b
+ollama pull llama3.1:8b
+ollama pull llama3.2:3b
+```
+
+---
+
+### P3-4: Testes de Saúde Automatizados
+
+**Diagnóstico:**
+O arquivo `test_docker.sh` na raiz tem apenas 12 bytes (provavelmente um stub vazio).
+
+**Ação:**
+- [ ] Criar `scripts/health-check.sh` que verifica:
+  - [ ] Todos os containers em estado `healthy`
+  - [ ] Ollama responde em `GET /api/tags`
+  - [ ] OpenClaw gateway responde em `GET /health`
+  - [ ] Todos os modelos configurados estão disponíveis no Ollama
 
 ---
 
 ## 📋 PLANO DE LIMPEZA — Consolidação
 
-> **O que o plano original propunha como "melhoria" mas já está feito.**
+> O que o plano original propunha como "melhoria" mas já está feito.
 > Objetivo: documentar o que existe e propor limpeza de redundâncias.
 
 ---
 
-### 🧹 Item L1: Dockerfile Multi-stage (Já feito)
+### 🧹 L1: Dockerfile Multi-stage (Já feito)
 
-**Estado atual:** O `Dockerfile` **já é multi-stage** com Node.js 20 Alpine:
+**Estado atual:** O `Dockerfile` **já é multi-stage** com Node.js 20 Alpine.
 - Stage `builder`: `npm install -g openclaw`
-- Stage `runtime`: copia módulos, cria usuário `openclaw` (UID 1001), healthcheck HTTP, roda na porta `18790`
+- Stage `runtime`: copia módulos, usuário não-root `openclaw` (UID 1001), healthcheck HTTP
 
 **Limpeza proposta:**
-- [ ] Remover comentário desatualizado na linha 68: `# Node.js v22 (LTS)` → na verdade é v20
-- [ ] Verificar se `entrypoint.js` ainda é necessário ou pode ser removido (o `entrypoint.sh` faz o trabalho real)
-- [ ] Consolidar o `COPY . .` que aparece duas vezes no plano original (bug)
+- [ ] Corrigir comentário linha 68: `# Node.js v22 (LTS)` → na verdade é **v20**
+- [ ] Verificar se `entrypoint.js` pode ser removido (o `entrypoint.sh` faz o trabalho real)
 
 ---
 
-### 🧹 Item L2: Scripts de Operação (Já feito — mais completo)
+### 🧹 L2: Scripts de Operação (Já feito — mais completo)
 
-**Estado atual:** Os scripts existentes são **superiores** ao proposto no plano:
+**Estado atual:** Os scripts existentes são superiores:
 ```
-deploy.sh       (12KB) — com rollback, logs coloridos, healthcheck loop
-backup.sh               — na raiz com retenção de 7 dias
+deploy.sh        (464 linhas) — build, rollback, status, restore, predeploy
+backup.sh        (raiz)       — backup básico com retenção 7 dias
 scripts/
-├── backup.sh           — versão avançada em scripts/
-├── monitor.sh          — monitoramento via docker stats
-├── fix-all.sh          — reparação automática de problemas comuns
-├── fix-permissions.sh  — correção de permissões de volumes
-└── repair-openclaw.sh  — reparação do container openclaw
+├── backup.sh                 — versão completa com envio para S3/remoto
+├── monitor.sh                — loop de monitoramento com alertas Telegram
+├── fix-all.sh                — reparação automática de problemas
+├── fix-permissions.sh        — correção de permissões de volumes
+├── repair-openclaw.sh        — reparação específica do container
+└── quick-setup-multiagent.sh — setup inicial de agentes com knowledge base
 ```
 
 **Limpeza proposta:**
-- [ ] Auditar se `backup.sh` da raiz e `scripts/backup.sh` fazem a mesma coisa → consolidar em um só
-- [ ] Mover `deploy.sh` da raiz para `scripts/deploy.sh` para organização
-- [ ] Adicionar `scripts/` ao `Makefile` como alvos: `make backup`, `make deploy`, `make monitor`
+- [ ] Unificar `backup.sh` da raiz e `scripts/backup.sh` — manter apenas `scripts/backup.sh`
+- [ ] Mover `deploy.sh` da raiz para `scripts/deploy.sh`
+- [ ] Atualizar `Makefile` para chamar os scripts de `scripts/`
 
 ---
 
-### 🧹 Item L3: Segurança — Grupos e Permissões (Já feito)
+### 🧹 L3: Segurança — Recursos e Usuário Não-root (Já feito)
 
-**Estado atual:** Já implementado no `docker-compose.yml`:
-```yaml
-deploy:
-  resources:
-    limits:
-      cpus: '4'
-      memory: 2G
-    reservations:
-      cpus: '2'
-      memory: 1G
-```
-Usuário não-root `openclaw` (UID 1001) já no Dockerfile.
+**Estado atual:**
+- `docker-compose.yml` define `deploy.resources` com limits e reservations para todos os serviços
+- Usuário `openclaw` (UID 1001) não-root já no Dockerfile
+- `entrypoint.sh` com verificação de permissões e `gosu`
 
 **Limpeza proposta:**
-- [ ] Remover `group_add: ["1000"]` do `docker-compose.yml` se não for necessário (potencial conflito com UID 1001 do container)
-- [ ] Documentar no `CLAUDE.md` por que `OPENCLAW_MEMORY_LIMIT` e `OPENCLAW_CPU_LIMIT` no `.env` existem mas não são usados no compose (vars definidas mas não referenciadas)
+- [ ] Remover `group_add: ["1000"]` do `docker-compose.yml` — possível conflito com UID 1001
+- [ ] Documentar no `CLAUDE.md` por que `OPENCLAW_MEMORY_LIMIT` e `OPENCLAW_CPU_LIMIT` existem no `.env` mas não são usados no compose
 
 ---
 
-### 🧹 Item L4: Arquivo .env (Já feito — mais organizado que o proposto)
+### 🧹 L4: Arquivo `.env` (Já feito — mais organizado que o proposto originalmente)
 
-**Estado atual:** O `.env` real já tem organização por seções com comentários explicativos.
+**Estado atual:** O `.env` real tem seções bem organizadas com comentários.
 
 **Limpeza proposta:**
-- [ ] Remover `# OPENCLAW_HOME=/home/openclaw/.config/openclaw` (comentário confuso)
 - [ ] Corrigir comentário na linha 58: `# Portas de RedeOLLAMA_API_BASE` → `# Portas de Rede`
-- [ ] Adicionar `GRAFANA_PASSWORD` para quando o P2 for implementado
-- [ ] **⚠️ ATENÇÃO:** O `.env` contém API keys em plaintext visíveis no repositório (Google AI, Groq, OpenRouter, Moonshot, NVAPI, Telegram). Se este repo for público ou compartilhado, **rotacionar todas as chaves imediatamente**.
+- [ ] Remover `# OPENCLAW_HOME=/home/openclaw/.config/openclaw` (comentário confuso)
+- [ ] Adicionar `GRAFANA_PASSWORD` para quando P2-1 for implementado
+- [ ] Criar `.env.example` parallel (veja P3-2)
 
 ---
 
 ## 📊 Priorização Final
 
-### P0 — Crítico (Fazer hoje)
-- [ ] Corrigir modelo primário no `openclaw.json` (erro 403 ativo)
-- [ ] Usar `${OBSIDIAN_VAULT_HOST}` no `docker-compose.yml`
+### P0 — Crítico (Hoje)
+- [x] **P0-1** Corrigir modelo primário no `openclaw.json` (erro 403 ativo)
+- [x] **P0-2** Usar `${OBSIDIAN_VAULT_HOST}` no `docker-compose.yml`
+- [ ] **P0-3** Criar config nginx ou desativar container nginx vazio
+- [x] **P0-4** Corrigir modelo do agente `prompt-engineer` (`llama3.3:3b` → `llama3.2:3b`)
 
 ### P1 — Alto (Esta semana)
-- [ ] Consolidar entrypoints duplicados
-- [ ] Remover IPs hardcoded do `openclaw.json`
-- [ ] Limpeza L3: remover `group_add` desnecessário
+- [ ] **P1-1** Criar Dockerfile próprio para Hermes ou avaliar remoção
+- [ ] **P1-2** Rotacionar API keys expostas e adicionar `.env.example`
+- [ ] **P1-3** Consolidar entrypoints duplicados
+- [ ] **P1-4** Reescrever Makefile desatualizado
+- [ ] **P1-5** Documentar ou remover `config/custom-config.yaml`
+- [ ] **P1-6** Remover IPs fixos do `openclaw.json`
 
 ### P2 — Médio (Próxima sprint)
-- [ ] Implementar Prometheus + Grafana (verificar RAM disponível antes)
-- [ ] Consolidar scripts duplicados (`backup.sh`)
-- [ ] Estrutura de memória no Obsidian
+- [ ] **P2-1** Implementar Prometheus + Grafana (verificar RAM disponível)
+- [ ] **P2-2** Atualizar documentação desatualizada (CLAUDE.md, STATUS-PRODUCAO.md)
+- [ ] **P2-3** Remover `docker-compose copy.yml`
+- [ ] **P2-4** Verificar e remover `data/config-schema.json` do versionamento
+- [ ] **P2-5** Estrutura de memória Obsidian com templates
 
 ### P3 — Baixo (Backlog)
-- [ ] Documentação técnica completa em `docs/architecture/`
-- [ ] Testes de carga e benchmark de modelos
-- [ ] Limpeza de comentários obsoletos no Dockerfile e `.env`
+- [ ] **P3-1** CI/CD com GitHub Actions (shellcheck, docker-compose validate)
+- [ ] **P3-2** Criar `.env.example`
+- [ ] **P3-3** Script `pull-models.sh` para bootstrap do Ollama
+- [ ] **P3-4** Testes de saúde automatizados (`health-check.sh`)
 
 ---
 
@@ -296,13 +537,18 @@ Usuário não-root `openclaw` (UID 1001) já no Dockerfile.
 ### Estabilidade
 - [ ] Zero erros 403 nos logs do gateway
 - [ ] `docker-compose ps` mostrando todos os containers `healthy`
-- [ ] Ollama respondendo modelos locais em < 30s
+- [ ] Ollama respondendo modelos locais em < 30s no primeiro start
 
 ### Portabilidade
 - [ ] Projeto sobe com `docker-compose up -d` em outra máquina após ajustar apenas o `.env`
-- [ ] Nenhum path absoluto no `docker-compose.yml`
+- [ ] Nenhum path absoluto hardcoded no `docker-compose.yml`
 
-### Observabilidade (após P2)
+### Segurança
+- [ ] API keys rotacionadas e não mais expostas
+- [ ] `.env.example` publicado, `.env` real apenas local
+- [ ] Nginx com proxy ativo (não vazio)
+
+### Observabilidade (após P2-1)
 - [ ] Dashboard Grafana com VRAM e latência
 - [ ] Alertas configurados para uso > 90% de VRAM
 
@@ -311,16 +557,20 @@ Usuário não-root `openclaw` (UID 1001) já no Dockerfile.
 ## 🚀 Próximos Passos Imediatos
 
 ```bash
-# 1. Corrigir openclaw.json (P0)
-# Editar agents.defaults.model.primary para ollama/qwen3.5:9b
+# 1. Corrigir openclaw.json (P0-1 e P0-4)
+# Editar agents.defaults.model.primary → ollama/qwen3.5:9b
+# Editar agente prompt-engineer → llama3.2:3b (não llama3.3:3b)
 
-# 2. Corrigir docker-compose.yml (P0)
-# Linha 73: substituir E:/obsidian/OpenClaw por ${OBSIDIAN_VAULT_HOST}
+# 2. Corrigir docker-compose.yml (P0-2)
+# Linha 73: E:/obsidian/OpenClaw → ${OBSIDIAN_VAULT_HOST}
 
-# 3. Reiniciar o container
+# 3. Criar nginx/conf.d/openclaw.conf (P0-3)
+# Ou desativar o serviço nginx no compose
+
+# 4. Reiniciar containers afetados
 docker-compose restart openclaw
 
-# 4. Verificar saúde
+# 5. Verificar saúde
 docker-compose ps
 docker-compose logs openclaw --tail=50
 ```

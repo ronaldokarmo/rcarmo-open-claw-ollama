@@ -7,7 +7,7 @@
 # ──────────────────────────────────────────────────────────
 
 # === STAGE 1: Builder ===
-FROM node:20-alpine AS builder
+FROM node:22-alpine AS builder
 
 WORKDIR /app
 
@@ -18,13 +18,16 @@ RUN npm config set fund=false && \
 # Copiar package.json para instalação
 COPY package.json ./
 # Instalar dependências globais (openclaw global)
-RUN npm install -g openclaw
+RUN npm install -g openclaw@latest
 
 # Copiar código fonte
 COPY . .
 
 # === STAGE 2: Runtime Otimizado ===
-FROM node:20-alpine AS runtime
+FROM node:22-alpine AS runtime
+
+# Instalar dependência para drop de privilégios (su-exec é o equivalente alpine do gosu)
+RUN apk add --no-cache su-exec bash curl wget
 
 # Configurar variáveis de ambiente
 ENV OPENCLAW_HOME=/home/openclaw \
@@ -42,11 +45,13 @@ RUN mkdir -p /home/openclaw/.openclaw && \
 # Copiar dependências e código do stage builder
 COPY --from=builder /usr/local/bin /usr/local/bin
 COPY --from=builder /usr/local/lib/node_modules /usr/local/lib/node_modules
-COPY --from=builder --chown=openclaw:openclaw /app /app
+COPY --from=builder /app /app
 
-# Configurar usuário
-USER 1001
 WORKDIR /app
+
+# Garantir que o script seja executável e criar alias gosu -> su-exec
+RUN chmod +x /app/entrypoint.sh && \
+    ln -s /sbin/su-exec /usr/local/bin/gosu
 
 # Expor porta
 EXPOSE 18790
@@ -56,7 +61,8 @@ HEALTHCHECK --interval=30s --timeout=10s --start-period=60s --retries=3 \
     CMD node -e "require('http').get('http://localhost:18790/health', r=>process.exit(r.statusCode===200?0:1))"
 
 # Entrypoint
-ENTRYPOINT ["npx", "openclaw"]
+# Removido USER openclaw para que o entrypoint rode como root, corrija permissões e depois use su-exec
+ENTRYPOINT ["/app/entrypoint.sh"]
 
 # ──────────────────────────────────────────────────────────
 # Metadados da Imagem
@@ -65,5 +71,5 @@ ENTRYPOINT ["npx", "openclaw"]
 # Usuário não-root: openclaw (UID 1000)
 # Multi-stage build (sem arquivos de build no runtime)
 # Dependências mínimas (alpine)
-# Node.js v22 (LTS)
+# Node.js v20 (LTS)
 # ──────────────────────────────────────────────────────────

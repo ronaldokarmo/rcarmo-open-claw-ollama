@@ -23,3 +23,5 @@ Thumbs.db
 Skills-para-LLMs*.png
 data-bkp-*/
 multiagents-openclaw/
+hermes_data/
+hermes_logs/
